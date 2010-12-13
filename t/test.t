@@ -13,6 +13,7 @@ my $data_gen = Algorithm::DecisionTree->training_data_generator(
                               output_datafile => $output_data_file,
                               parameter_file    => $parameter_file,
                               number_of_training_samples => 35,
+                              write_to_file => 1,
                               debug1 => 0,
                               debug2 => 0,
     );

@@ -17,7 +17,10 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '1.0';
+our $VERSION = '1.1';
+
+
+#############################   Constructors  #######################
 
 # Constructor for the training data generator:
 sub training_data_generator { 
@@ -32,7 +35,7 @@ sub training_data_generator {
         _parameter_file              =>   $args{parameter_file},
         _number_of_training_samples  =>
                                           $args{number_of_training_samples},
-        _write_to_file               =>   $args{write_to_file} || 1,
+        _write_to_file               =>   $args{write_to_file} || 0,
         _debug1                      =>   $args{debug1} || 0,
         _debug2                      =>   $args{debug2} || 0,
         _training_sample_records     =>   {},
@@ -54,7 +57,7 @@ sub new {
         _training_datafile           =>   $args{training_datafile} 
                                         || croak("training_datafile required"),
         _root_node                   =>    undef,
-        _debug1                      =>    $args{debug1} || 1,
+        _debug1                      =>    $args{debug1} || 0,
         _debug2                      =>    $args{debug2} || 0,
         _training_data_hash          =>    {},
         _features_and_values_hash    =>    {},
@@ -70,10 +73,18 @@ sub classify {
     my $self = shift;
     my $root_node = shift;
     my @features_and_values = @_;
-    print "classify() called for: @features_and_values\n";    
+    my @class_names = @{$self->{_class_names}};
+    #print "classify() called for: @features_and_values\n";    
     my $feature_test = $root_node->get_feature();
-    $self->recursive_descent_for_classification( 
-            $root_node, @features_and_values );
+    my $classification = $self->recursive_descent_for_classification( 
+                                      $root_node, @features_and_values );
+    if ($self->{_debug1}) {
+        print "\nThe classification:\n";
+        foreach my $class (@class_names) {
+            print "    $class with probability $classification->{$class}\n";
+        }
+    }
+    return $classification;
 }
 
 sub recursive_descent_for_classification {
@@ -82,7 +93,7 @@ sub recursive_descent_for_classification {
     my @feature_and_values = @_;
     my @class_names = @{$self->{_class_names}};
     my $feature_test_at_node = $node->get_feature();
-    print "testing for feature $feature_test_at_node\n";
+    #print "testing for feature $feature_test_at_node\n";
     my $value_for_feature;
     my @remaining_features_and_values = ();
     foreach my $feature_and_value (@feature_and_values) {
@@ -96,22 +107,25 @@ sub recursive_descent_for_classification {
     my $feature_value_combo = "$feature_test_at_node=>$value_for_feature";
     my @children = @{$node->get_children()};
     if (@children == 0) {
+        my %answer;
         my @leaf_node_class_probabilities=@{$node->get_class_probabilities()};
         foreach my $i (0..@class_names-1) {
-            print "Classification=> Probability of class $class_names[$i]: $leaf_node_class_probabilities[$i]\n";
+            $answer{$class_names[$i]} = $leaf_node_class_probabilities[$i];
         }
-        return;
+        return \%answer;
     }
+    my $answer;
     foreach my $child (@children) {
         my @branch_features_and_values = 
                @{$child->get_branch_features_and_values()};
         my $last_feature_and_value_on_branch = pop @branch_features_and_values;
         if ($last_feature_and_value_on_branch eq $feature_value_combo) {
-            $self->recursive_descent_for_classification($child, 
+            $answer = $self->recursive_descent_for_classification($child, 
                                     @remaining_features_and_values);
             last;
         }
     }
+    return $answer;
 }    
 
 #################    Decision Tree Construction  ###################
@@ -133,7 +147,6 @@ sub construct_decision_tree_classifier {
     $self->recursive_descent($root_node);
     return $root_node;
 }
-
 
 sub recursive_descent {
     my $self = shift;
@@ -400,7 +413,6 @@ sub probability_for_feature_value {
         my @features_and_values = @{$training_data_hash{$sample}};
         foreach my $i (0..@values_for_feature-1) {
             foreach my $current_value (@features_and_values) {
-#                print "YES for $values_for_feature[$i] and $current_value in sample $sample\n\n" if $values_for_feature[$i] eq $current_value;
                 $value_counts[$i]++ 
                   if $values_for_feature[$i] eq $current_value;
             }
@@ -465,8 +477,7 @@ sub prior_probability_for_class {
     return (1.0 * @trues) / $total_num_of_samples; 
 }
 
-
-###################  Read training data from file  ###################
+###################  Read Training Data From File  ###################
 
 sub get_training_data {
     my $self = shift;
@@ -522,7 +533,6 @@ sub get_training_data {
             $samples_class_label_hash{$record[0]} = $record[1];
             $training_data_hash{$record[0]} = [];
             foreach my $i (2..@record-1) {
-    #            push @{$training_data_hash{$record[0]}}, $record[$i];
                 push @{$training_data_hash{$record[0]}}, 
                                 "$column_label_hash{$i}" . "=>" . $record[$i];
             }
@@ -533,7 +543,6 @@ sub get_training_data {
     $self->{_samples_class_label_hash} = \%samples_class_label_hash;
     $self->{_training_data_hash} = \%training_data_hash;
 }    
-
 
 sub show_training_data {
     my $self = shift;
@@ -547,19 +556,10 @@ sub show_training_data {
         print "$k --->  @{$features_and_values_hash{$k}}\n";
     }
     print "\n\nSamples vs. Class Labels:\n\n";
-    #while ( my ($k, $v) = each %samples_class_label_hash ) {
-    #    print "$k --->  $samples_class_label_hash{$k}\n";
-    #}
     foreach my $kee (sort {sample_index($a) <=> sample_index($b)} 
                                       keys %samples_class_label_hash) {
         print "$kee =>  $samples_class_label_hash{$kee}\n";
     }
-    
-    
-    #print "\n\nsamples vs. feature names and corresponding values:\n";
-    #while ( my ($k, $v) = each %training_data_hash ) {
-    #    print "$k --->  @{$training_data_hash{$k}}\n";
-    #}
     print "\n\nTraining Samples:\n\n";
     foreach my $kee (sort {sample_index($a) <=> sample_index($b)} 
                                       keys %training_data_hash) {
@@ -567,10 +567,12 @@ sub show_training_data {
     }
 }    
 
+sub get_class_names {
+    my $self = shift;
+    return @{$self->{_class_names}}
+}
 
-
-
-###################  Gen Training Data If Not Supplied ###############
+###################  For generating your own training data  ###############
 
 sub read_parameter_file {
     my $self = shift;
@@ -809,7 +811,6 @@ sub write_training_data_to_file {
     close FILEHANDLE;
 }
 
-
 sub find_longest_feature_or_value {
     my $self = shift;
     my %features_and_values_hash = %{$self->{_features_and_values_hash}};
@@ -825,7 +826,7 @@ sub find_longest_feature_or_value {
     return $max_length;
 }
 
-###########################  utility routines #####################3
+###########################  Utility Routines  #####################
 
 # returns the array index that contains a specified STRING value:
 # meant only for array of strings
@@ -921,17 +922,20 @@ sub check_for_illegal_params2 {
     return $found_match_flag;
 }
 
-#######################################################################
+
+#######################  Class Node  ###########################
+
+# The nodes of the decision tree are instances of this class:
 
 package Node;
 
 use strict;                                                         
 use Carp;
 
-# $feature is the feature test at current node.
-# $branc_features_and_values in an anonymous array holding the 
-# feature names and corresponding values to the current node 
-# from the root:
+# $feature is the feature test at the current node.
+# $branch_features_and_values is an anonymous array holding
+# the feature names and corresponding values on the path
+# from the root to the current node:
 sub new {                                                           
     my ($class, $feature, $entropy, $class_probabilities, $branch_features_and_values) = @_; 
     bless {                                                         
@@ -939,8 +943,8 @@ sub new {
         _entropy => $entropy,
         _class_probabilities => $class_probabilities,
         _branch_features_and_values => $branch_features_and_values,
-        _linked_to => [],                                           #(E)
-    }, $class;                                                      #(F)
+        _linked_to => [],                                          
+    }, $class;                                                     
 }
 
 # this returns the feature test at the current node
@@ -960,18 +964,18 @@ sub get_class_probabilities {
 }
 
 sub get_branch_features_and_values {    
-    my $self = shift;                                               #(H)
+    my $self = shift;                   
     return $self->{ _branch_features_and_values };     
 }
 
 sub add_to_branch_features_and_values {
-    my $self = shift;                                               #(H)
+    my $self = shift;                   
     my $feature_and_value = shift;
     push @{$self->{ _branch_features_and_values }}, $feature_and_value;
 }
 
 sub get_children {       
-    my $self = shift;                                               #(K)
+    my $self = shift;                   
     return $self->{_linked_to};
 }
 
@@ -980,9 +984,9 @@ sub add_child_link {
     push @{$self->{_linked_to}}, $new_node;                  
 }
 
-sub delete_all_links {                                              #(W)
-    my $self = shift;                                               #(X)
-    $self->{_linked_to} = undef;                                    #(Y)
+sub delete_all_links {                  
+    my $self = shift;                   
+    $self->{_linked_to} = undef;        
 }
 
 sub display_decision_tree {
@@ -1055,6 +1059,17 @@ classifying data.
   # you want the data vectors to be biased for the different classes.
 
 
+=head1 CHANGES
+
+With Version 1.1, a call to classify() now returns a hash of
+the class labels and their associated probabilities.
+(Previously, these results were just printed out in the
+terminal window.) Now you should be able to write your own
+script that reads in the test data from a file and outputs
+the classification results for each data vector.  This
+version also includes some additional documentation and a
+general cleanup of the code.
+
 =head1 DESCRIPTION
 
 B<Algorithm::DecisionTree> is a I<perl5> module for
@@ -1086,7 +1101,7 @@ referred to as the nearest neighbor classification.)
 A decision tree classifier works differently.  When you
 construct a decision tree, you select for the root node a
 feature test that can be expected to maximally
-ddisambiguate the class labels that could be associated with
+disambiguate the class labels that could be associated with
 the data you are trying to classify.  You then attach to the
 root node a set of child nodes, one for each value of the
 feature you chose at the root node. Now at each child node
@@ -1112,13 +1127,102 @@ constructing a decision-tree classifier and subsequently
 testing the classifier on a test set of data is a good way
 to develop greater proficiency with decision trees.
 
-What is cools about decision tree classification is that it
+What is cool about decision tree classification is that it
 gives you soft classification, meaning it may associate more
 than one class label with a given data vector.  When this
 happens, it may mean that your classes are indeed
 overlapping in the underlying feature space.  It could also
 mean that you simply have not supplied sufficient training
 data to the decision tree classifier.
+
+=head1 WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE
+
+Consider the following scenario: Let's say you are running a
+small investment company that employs a team of
+stockbrokers who make buy/sell decisions for the customers
+of your company.  Assume that your company has asked the
+traders to make each investment decision on the basis of the
+following four criteria:
+
+  price_to_earnings_ratio   (P_to_E)
+
+  price_to_sales_ratio      (P_to_S)
+
+  return_on_equity          (R_on_E)
+
+  market_share              (MS)
+
+Since you are the boss, you keep track of the buy/sell
+decisions made by the individual traders.  But one
+unfortunate day, all of your traders decide to quit because
+you did not pay them enough.  So what do you do?  If you had
+a module like the one here, you could still run your company
+and do so in such a way that, on the average, would do
+better than any of the individual traders who worked for
+your company.  This is what you do: You pool together the
+individual trader buy/sell decisions you have accumulated
+during the last one year.  This pooled information is likely
+to look like:
+
+
+  example      buy/sell     P_to_E     P_to_S     R_on_E      MS
+  ============================================================+=
+
+  example_1     buy          high       low        medium    low
+  example_2     buy          medium     medium     low       low
+  example_3     sell         low        medium     low       high
+  ....
+  ....
+
+This data would constitute your training file. You could feed this
+file into the module by calling: 
+
+    my $dt = Algorithm::DecisionTree->new( 
+                                          training_datafile => $training_datafile,
+                                         );
+    $dt->get_training_data(); 
+
+and then construct a decision tree by calling:
+
+    my $root_node = $dt->construct_decision_tree_classifier();
+
+Now you and your company (with practically no employees) are
+ready to service the customers again. Suppose your computer
+needs to make a buy/sell decision about an investment
+prospect that is best described by:
+
+    price_to_earnings_ratio   =>  low
+    price_to_sales_ratio      =>  very_low
+    return_on_equity          =>  none
+    market_share              =>  medium    
+
+All that your computer would need to do would be to
+construct a data vector like
+
+   my @data =   qw / P_to_E=>low
+                     P_to_S=>very_low
+                     R_on_E=>none
+                     MS=>medium /;
+
+and call the decision tree classifier you just constructed by
+
+    $dt->classify($root_node, @data); 
+
+The answer returned will be 'buy' and 'sell', along with the
+associated probabilities.  So if the probability of 'buy' is
+considerably greater than the probability of 'sell', that's
+what you should instruct your computer to do.
+
+The chances are that, on the average, this approach would
+beat the performance of any of your individual traders who
+worked for you previously since the buy/sell decisions made
+by the computer would be based on the collective wisdom of
+all your previous traders. 
+
+B<DISCLAIMER: There is obviously a lot more to good
+investing than what is captured by the silly little example
+here. However, it does the convey the sense in which the
+current module could be used.>
 
 =head1 METHODS
 
@@ -1129,7 +1233,7 @@ your own training data:
 
 =over
 
-=item B<new()>
+=item B<new():>
 
     my $dt = Algorithm::DecisionTree->new( 
                                           training_datafile => $training_datafile,
@@ -1141,7 +1245,7 @@ the training data in the training datafile must be according
 to a certain format that is shown below.  (Also see the file
 training.dat in the examples directory.)
 
-=item B<get_training_data()>
+=item B<get_training_data():>
 
 After you have constructed a new instance of the Algorithm::DecisionTree
 class, you must now read in the training data that is contained in the
@@ -1183,7 +1287,7 @@ part of the module will be in the format shown above.  More
 on that later.
 
 
-=item B<show_training_data()>
+=item B<show_training_data():>
 
 If you wish to see the training data that was just digested by the module,
 call 
@@ -1191,7 +1295,7 @@ call
     $dt->show_training_data(); 
 
 
-=item B<construct_decision_tree_classifier()>
+=item B<construct_decision_tree_classifier():>
 
 After the training data is digested, it is time to construct 
 a decision tree classifier.  This you do by
@@ -1203,12 +1307,12 @@ defined within the main package file, at its end.  So, don't
 forget, that $root_node in the above example call will be
 instantiated to an instance of type Node.
 
-=item B<display_decision_tree("   ")>
+=item B<$root_nodeC<< -> >>display_decision_tree(" "):>
 
     $root_node->display_decision_tree("   ");
 
 This will display the decision tree in your terminal window
-by using a recursively determined offset for each node and
+by using a recursively determined offset for each node as
 the display routine descends down the tree.
 
 I have intentionally left the syntax fragment $root_node in
@@ -1218,18 +1322,21 @@ DecisionTree we constructed earlier, but on the Node
 instance returned by the call to
 construct_decision_tree_classifier().
 
-=item B<classify($root_node, @test_sample)>
+=item B<classify($root_node, @test_sample):>
 
     my @test_sample = qw /exercising=>never 
                           smoking=>heavy 
                           fatIntake=>heavy 
                           videoAddiction=>heavy /;
-    $dt->classify($root_node, @test_sample);
+
+    my $classification = $dt->classify($root_node, @test_sample);
 
 where, again, $root_node is an instance of type Node returned
-by the call to construct_decision_tree_classifier().
+by the call to construct_decision_tree_classifier().  The variable
+$classification holds a reference to a hash whose keys are the
+class labels and whose values the associated probabilities.
 
-=item B<training_data_generator()>
+=item B<training_data_generator():>
 
 The training data generator is created by using its own constructor:
 
@@ -1241,7 +1348,7 @@ The training data generator is created by using its own constructor:
                               number_of_training_samples => 35,
                                                                          );
 
-=item B<read_parameter_file()>
+=item B<$data_generatorC<< -> >>read_parameter_file():>
 
 After you have constructed an instance of the data generator, you
 need to ask it to read the parameter file:
@@ -1296,27 +1403,27 @@ information.  Without the biasing, your training data will
 be uniformly distributed with respect to all of the feature
 values and you will only get ambiguous classifications from
 the resulting decision tree classifier.  The biasing allows
-you express a higher or lower probability that a particular
-feature value should have for a given class.  The
+you to express a higher or lower probability that a
+particular feature value should have for a given class.  The
 probability weight that is unused for each feature is
 distributed uniformly amongst the remaining feature values.
-I did experiment with with idea of assigning probability
-weights to multiple (or even all) of the values on a given
-feature, it does not add to the educational value you derive
-from the resulting training data.  
+I did experiment with the idea of assigning probability
+weights to multiple (or even all) of the values for a given
+feature --- it does not add to the educational value you
+derive from the resulting training data.
 
-NOTE: if you do NOT give a bias for a feature (as is the
+NOTE: if you do NOT express a bias for a feature (as is the
 case with the feature 'videoAddiction' above), equal weight
 is given to all its values.
 
-=item B<gen_training_data()>
+=item B<$data_generatorC<< -> >>gen_training_data():>
 
 This call generators the training data from your parameter
 file:
 
     $data_generator->gen_training_data();
 
-=item B<write_training_data_to_file()>
+=item B<$data_generatorC<< -> >>write_training_data_to_file():>
 
 To write out the training data to a disk file:
 
@@ -1335,12 +1442,18 @@ A call such as
                           smoking=>heavy 
                           fatIntake=>heavy 
                           videoAddiction=>heavy /;
-    $dt->classify($root_node, @test_sample);
 
-will return an answer like:
+    my $classification = $dt->classify($root_node, @test_sample);
+    print "The classification:\n";
+    foreach my $class ($dt->get_class_names()) {
+        print "    $class with probability $classification->{$class}\n"; 
+    }    
 
-    Classification=> Probability of class malignant: 0.461538461538462
-    Classification=> Probability of class benign: 0.538461538461538
+will print out the classification results in the following form:
+
+    The classification:
+        malignant with probability 0.744186046511628
+        benign with probability 0.255813953488372
 
 Note again the soft classification returned.  That is, if
 the probability distributions for the different classes
@@ -1350,9 +1463,9 @@ along with the corresponding class probabilities.  Another
 reason for why the decision tree classifier may associate
 significant probabilities with multiple class labels is that
 you used inadequate number of training samples to induce the
-decision tree.  The good thing is that the classifier does
-not lie to you (unlike, say, a hard classification rule that
-would corresponding to a partitioning of the underlying
+decision tree.  B<The good thing is that the classifier does
+not lie to you> (unlike, say, a hard classification rule
+that would corresponding to a partitioning of the underlying
 feature space).  The decision tree classifier give you the
 best classification that can be made given the training data
 you fed into it.
@@ -1361,7 +1474,18 @@ you fed into it.
 
 See the examples directory in the distribution for how to
 generate the training data, how to induce a decision tree,
-and how to then classify the data using the decision tree.
+and how to then classify new data using the decision tree.
+
+To become more familiar with the module, run the script
+
+    training_data_generator.pl
+
+to generate a training datafile according to the information
+placed in the file param.txt and then run the script 
+
+    construct_dt_and_classify.pl
+
+to classify a new data vector that is in the script.
 
 =head1 EXPORT
 

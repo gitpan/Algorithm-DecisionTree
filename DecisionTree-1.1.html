@@ -21,7 +21,9 @@ classifying data.</title>
 
 	<li><a href="#name">NAME</a></li>
 	<li><a href="#synopsis">SYNOPSIS</a></li>
+	<li><a href="#changes">CHANGES</a></li>
 	<li><a href="#description">DESCRIPTION</a></li>
+	<li><a href="#what_practical_problem_is_solved_by_this_module">WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE</a></li>
 	<li><a href="#methods">METHODS</a></li>
 	<li><a href="#how_the_classification_results_are_displayed">HOW THE CLASSIFICATION RESULTS ARE DISPLAYED</a></li>
 	<li><a href="#examples">EXAMPLES</a></li>
@@ -95,6 +97,18 @@ classifying data.</p>
 <p>
 </p>
 <hr />
+<h1><a name="changes">CHANGES</a></h1>
+<p>With Version 1.1, a call to <a href="#classify"><code>classify()</code></a> now returns a hash of
+the class labels and their associated probabilities.
+(Previously, these results were just printed out in the
+terminal window.) Now you should be able to write your own
+script that reads in the test data from a file and outputs
+the classification results for each data vector.  This
+version also includes some additional documentation and a
+general cleanup of the code.</p>
+<p>
+</p>
+<hr />
 <h1><a name="description">DESCRIPTION</a></h1>
 <p><strong>Algorithm::DecisionTree</strong> is a <em>perl5</em> module for
 constructing a decision tree from a training datafile
@@ -123,7 +137,7 @@ referred to as the nearest neighbor classification.)</p>
 <p>A decision tree classifier works differently.  When you
 construct a decision tree, you select for the root node a
 feature test that can be expected to maximally
-ddisambiguate the class labels that could be associated with
+disambiguate the class labels that could be associated with
 the data you are trying to classify.  You then attach to the
 root node a set of child nodes, one for each value of the
 feature you chose at the root node. Now at each child node
@@ -146,7 +160,7 @@ data. Generating your own training data, using it for
 constructing a decision-tree classifier and subsequently
 testing the classifier on a test set of data is a good way
 to develop greater proficiency with decision trees.</p>
-<p>What is cools about decision tree classification is that it
+<p>What is cool about decision tree classification is that it
 gives you soft classification, meaning it may associate more
 than one class label with a given data vector.  When this
 happens, it may mean that your classes are indeed
@@ -156,13 +170,93 @@ data to the decision tree classifier.</p>
 <p>
 </p>
 <hr />
+<h1><a name="what_practical_problem_is_solved_by_this_module">WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE</a></h1>
+<p>Consider the following scenario: Let's say you are running a
+small investment company that employs a team of
+stockbrokers who make buy/sell decisions for the customers
+of your company.  Assume that your company has asked the
+traders to make each investment decision on the basis of the
+following four criteria:</p>
+<pre>
+  price_to_earnings_ratio   (P_to_E)</pre>
+<pre>
+  price_to_sales_ratio      (P_to_S)</pre>
+<pre>
+  return_on_equity          (R_on_E)</pre>
+<pre>
+  market_share              (MS)</pre>
+<p>Since you are the boss, you keep track of the buy/sell
+decisions made by the individual traders.  But one
+unfortunate day, all of your traders decide to quit because
+you did not pay them enough.  So what do you do?  If you had
+a module like the one here, you could still run your company
+and do so in such a way that, on the average, would do
+better than any of the individual traders who worked for
+your company.  This is what you do: You pool together the
+individual trader buy/sell decisions you have accumulated
+during the last one year.  This pooled information is likely
+to look like:</p>
+<pre>
+  example      buy/sell     P_to_E     P_to_S     R_on_E      MS
+  ============================================================+=</pre>
+<pre>
+  example_1     buy          high       low        medium    low
+  example_2     buy          medium     medium     low       low
+  example_3     sell         low        medium     low       high
+  ....
+  ....</pre>
+<p>This data would constitute your training file. You could feed this
+file into the module by calling:</p>
+<pre>
+    my $dt = Algorithm::DecisionTree-&gt;new( 
+                                          training_datafile =&gt; $training_datafile,
+                                         );
+    $dt-&gt;get_training_data();</pre>
+<p>and then construct a decision tree by calling:</p>
+<pre>
+    my $root_node = $dt-&gt;construct_decision_tree_classifier();</pre>
+<p>Now you and your company (with practically no employees) are
+ready to service the customers again. Suppose your computer
+needs to make a buy/sell decision about an investment
+prospect that is best described by:</p>
+<pre>
+    price_to_earnings_ratio   =&gt;  low
+    price_to_sales_ratio      =&gt;  very_low
+    return_on_equity          =&gt;  none
+    market_share              =&gt;  medium</pre>
+<p>All that your computer would need to do would be to
+construct a data vector like</p>
+<pre>
+   my @data =   qw / P_to_E=&gt;low
+                     P_to_S=&gt;very_low
+                     R_on_E=&gt;none
+                     MS=&gt;medium /;</pre>
+<p>and call the decision tree classifier you just constructed by</p>
+<pre>
+    $dt-&gt;classify($root_node, @data);</pre>
+<p>The answer returned will be 'buy' and 'sell', along with the
+associated probabilities.  So if the probability of 'buy' is
+considerably greater than the probability of 'sell', that's
+what you should instruct your computer to do.</p>
+<p>The chances are that, on the average, this approach would
+beat the performance of any of your individual traders who
+worked for you previously since the buy/sell decisions made
+by the computer would be based on the collective wisdom of
+all your previous traders.</p>
+<p><strong>DISCLAIMER: There is obviously a lot more to good
+investing than what is captured by the silly little example
+here. However, it does the convey the sense in which the
+current module could be used.</strong></p>
+<p>
+</p>
+<hr />
 <h1><a name="methods">METHODS</a></h1>
 <p>The module provides the following methods for decision-tree
 induction from training data in a diskfile, for data
 classification with the decision tree, and for generating
 your own training data:</p>
 <dl>
-<dt><strong><a name="new" class="item"><strong>new()</strong></a></strong></dt>
+<dt><strong><a name="new" class="item"><strong>new():</strong></a></strong></dt>
 
 <dd>
 <pre>
@@ -175,7 +269,7 @@ the training data in the training datafile must be according
 to a certain format that is shown below.  (Also see the file
 training.dat in the examples directory.)</p>
 </dd>
-<dt><strong><a name="get_training_data" class="item"><strong>get_training_data()</strong></a></strong></dt>
+<dt><strong><a name="get_training_data" class="item"><strong>get_training_data():</strong></a></strong></dt>
 
 <dd>
 <p>After you have constructed a new instance of the Algorithm::DecisionTree
@@ -213,7 +307,7 @@ training data file that is generated by the data generation
 part of the module will be in the format shown above.  More
 on that later.</p>
 </dd>
-<dt><strong><a name="show_training_data" class="item"><strong>show_training_data()</strong></a></strong></dt>
+<dt><strong><a name="show_training_data" class="item"><strong>show_training_data():</strong></a></strong></dt>
 
 <dd>
 <p>If you wish to see the training data that was just digested by the module,
@@ -221,7 +315,7 @@ call</p>
 <pre>
     $dt-&gt;show_training_data();</pre>
 </dd>
-<dt><strong><a name="construct_decision_tree_classifier" class="item"><strong>construct_decision_tree_classifier()</strong></a></strong></dt>
+<dt><strong><a name="construct_decision_tree_classifier" class="item"><strong>construct_decision_tree_classifier():</strong></a></strong></dt>
 
 <dd>
 <p>After the training data is digested, it is time to construct 
@@ -233,13 +327,13 @@ defined within the main package file, at its end.  So, don't
 forget, that $root_node in the above example call will be
 instantiated to an instance of type Node.</p>
 </dd>
-<dt><strong><a name="display_decision_tree" class="item"><strong>display_decision_tree(&quot;   &quot;)</strong></a></strong></dt>
+<dt><strong><a name="display_decision_tree" class="item"><strong>$root_node<code>-&gt;</code>display_decision_tree(&quot; &quot;):</strong></a></strong></dt>
 
 <dd>
 <pre>
     $root_node-&gt;display_decision_tree(&quot;   &quot;);</pre>
 <p>This will display the decision tree in your terminal window
-by using a recursively determined offset for each node and
+by using a recursively determined offset for each node as
 the display routine descends down the tree.</p>
 <p>I have intentionally left the syntax fragment $root_node in
 the above call to remind the reader that
@@ -248,19 +342,22 @@ DecisionTree we constructed earlier, but on the Node
 instance returned by the call to
 <a href="#construct_decision_tree_classifier"><code>construct_decision_tree_classifier()</code></a>.</p>
 </dd>
-<dt><strong><a name="classify" class="item"><strong>classify($root_node, @test_sample)</strong></a></strong></dt>
+<dt><strong><a name="classify" class="item"><strong>classify($root_node, @test_sample):</strong></a></strong></dt>
 
 <dd>
 <pre>
     my @test_sample = qw /exercising=&gt;never 
                           smoking=&gt;heavy 
                           fatIntake=&gt;heavy 
-                          videoAddiction=&gt;heavy /;
-    $dt-&gt;classify($root_node, @test_sample);</pre>
+                          videoAddiction=&gt;heavy /;</pre>
+<pre>
+    my $classification = $dt-&gt;classify($root_node, @test_sample);</pre>
 <p>where, again, $root_node is an instance of type Node returned
-by the call to <a href="#construct_decision_tree_classifier"><code>construct_decision_tree_classifier()</code></a>.</p>
+by the call to <a href="#construct_decision_tree_classifier"><code>construct_decision_tree_classifier()</code></a>.  The variable
+$classification holds a reference to a hash whose keys are the
+class labels and whose values the associated probabilities.</p>
 </dd>
-<dt><strong><a name="training_data_generator" class="item"><strong>training_data_generator()</strong></a></strong></dt>
+<dt><strong><a name="training_data_generator" class="item"><strong>training_data_generator():</strong></a></strong></dt>
 
 <dd>
 <p>The training data generator is created by using its own constructor:</p>
@@ -273,7 +370,7 @@ by the call to <a href="#construct_decision_tree_classifier"><code>construct_dec
                               number_of_training_samples =&gt; 35,
                                                                          );</pre>
 </dd>
-<dt><strong><a name="read_parameter_file" class="item"><strong>read_parameter_file()</strong></a></strong></dt>
+<dt><strong><a name="read_parameter_file" class="item"><strong>$data_generator<code>-&gt;</code>read_parameter_file():</strong></a></strong></dt>
 
 <dd>
 <p>After you have constructed an instance of the data generator, you
@@ -323,19 +420,19 @@ information.  Without the biasing, your training data will
 be uniformly distributed with respect to all of the feature
 values and you will only get ambiguous classifications from
 the resulting decision tree classifier.  The biasing allows
-you express a higher or lower probability that a particular
-feature value should have for a given class.  The
+you to express a higher or lower probability that a
+particular feature value should have for a given class.  The
 probability weight that is unused for each feature is
 distributed uniformly amongst the remaining feature values.
-I did experiment with with idea of assigning probability
-weights to multiple (or even all) of the values on a given
-feature, it does not add to the educational value you derive
-from the resulting training data.</p>
-<p>NOTE: if you do NOT give a bias for a feature (as is the
+I did experiment with the idea of assigning probability
+weights to multiple (or even all) of the values for a given
+feature --- it does not add to the educational value you
+derive from the resulting training data.</p>
+<p>NOTE: if you do NOT express a bias for a feature (as is the
 case with the feature 'videoAddiction' above), equal weight
 is given to all its values.</p>
 </dd>
-<dt><strong><a name="gen_training_data" class="item"><strong>gen_training_data()</strong></a></strong></dt>
+<dt><strong><a name="gen_training_data" class="item"><strong>$data_generator<code>-&gt;</code>gen_training_data():</strong></a></strong></dt>
 
 <dd>
 <p>This call generators the training data from your parameter
@@ -343,7 +440,7 @@ file:</p>
 <pre>
     $data_generator-&gt;gen_training_data();</pre>
 </dd>
-<dt><strong><a name="write_training_data_to_file" class="item"><strong>write_training_data_to_file()</strong></a></strong></dt>
+<dt><strong><a name="write_training_data_to_file" class="item"><strong>$data_generator<code>-&gt;</code>write_training_data_to_file():</strong></a></strong></dt>
 
 <dd>
 <p>To write out the training data to a disk file:</p>
@@ -362,12 +459,18 @@ terminal window if the $debug1 is on.</p>
     my @test_sample = qw /exercising=&gt;never 
                           smoking=&gt;heavy 
                           fatIntake=&gt;heavy 
-                          videoAddiction=&gt;heavy /;
-    $dt-&gt;classify($root_node, @test_sample);</pre>
-<p>will return an answer like:</p>
+                          videoAddiction=&gt;heavy /;</pre>
 <pre>
-    Classification=&gt; Probability of class malignant: 0.461538461538462
-    Classification=&gt; Probability of class benign: 0.538461538461538</pre>
+    my $classification = $dt-&gt;classify($root_node, @test_sample);
+    print &quot;The classification:\n&quot;;
+    foreach my $class ($dt-&gt;get_class_names()) {
+        print &quot;    $class with probability $classification-&gt;{$class}\n&quot;; 
+    }</pre>
+<p>will print out the classification results in the following form:</p>
+<pre>
+    The classification:
+        malignant with probability 0.744186046511628
+        benign with probability 0.255813953488372</pre>
 <p>Note again the soft classification returned.  That is, if
 the probability distributions for the different classes
 overlap in the underlying feature space, the classifier will
@@ -376,9 +479,9 @@ along with the corresponding class probabilities.  Another
 reason for why the decision tree classifier may associate
 significant probabilities with multiple class labels is that
 you used inadequate number of training samples to induce the
-decision tree.  The good thing is that the classifier does
-not lie to you (unlike, say, a hard classification rule that
-would corresponding to a partitioning of the underlying
+decision tree.  <strong>The good thing is that the classifier does
+not lie to you</strong> (unlike, say, a hard classification rule
+that would corresponding to a partitioning of the underlying
 feature space).  The decision tree classifier give you the
 best classification that can be made given the training data
 you fed into it.</p>
@@ -388,7 +491,15 @@ you fed into it.</p>
 <h1><a name="examples">EXAMPLES</a></h1>
 <p>See the examples directory in the distribution for how to
 generate the training data, how to induce a decision tree,
-and how to then classify the data using the decision tree.</p>
+and how to then classify new data using the decision tree.</p>
+<p>To become more familiar with the module, run the script</p>
+<pre>
+    training_data_generator.pl</pre>
+<p>to generate a training datafile according to the information
+placed in the file param.txt and then run the script</p>
+<pre>
+    construct_dt_and_classify.pl</pre>
+<p>to classify a new data vector that is in the script.</p>
 <p>
 </p>
 <hr />
