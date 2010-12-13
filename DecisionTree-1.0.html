@@ -1,0 +1,440 @@
+<?xml version="1.0" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Algorithm::DecisionTree - A pure-Perl implementation for
+constructing a decision tree from multidimensional training
+data and for using the decision tree thus induced for
+classifying data.</title>
+<meta http-equiv="content-type" content="text/html; charset=utf-8" />
+<link rev="made" href="mailto:root@localhost" />
+</head>
+
+<body style="background-color: white">
+
+
+<!-- INDEX BEGIN -->
+<div name="index">
+<p><a name="__index__"></a></p>
+
+<ul>
+
+	<li><a href="#name">NAME</a></li>
+	<li><a href="#synopsis">SYNOPSIS</a></li>
+	<li><a href="#description">DESCRIPTION</a></li>
+	<li><a href="#methods">METHODS</a></li>
+	<li><a href="#how_the_classification_results_are_displayed">HOW THE CLASSIFICATION RESULTS ARE DISPLAYED</a></li>
+	<li><a href="#examples">EXAMPLES</a></li>
+	<li><a href="#export">EXPORT</a></li>
+	<li><a href="#bugs">BUGS</a></li>
+	<li><a href="#installation">INSTALLATION</a></li>
+	<li><a href="#author">AUTHOR</a></li>
+	<li><a href="#copyright">COPYRIGHT</a></li>
+</ul>
+
+<hr name="index" />
+</div>
+<!-- INDEX END -->
+
+<p>
+</p>
+<h1><a name="name">NAME</a></h1>
+<p>Algorithm::DecisionTree - A pure-Perl implementation for
+constructing a decision tree from multidimensional training
+data and for using the decision tree thus induced for
+classifying data.</p>
+<p>
+</p>
+<hr />
+<h1><a name="synopsis">SYNOPSIS</a></h1>
+<pre>
+  # FOR CONSTRUCTING A DECISION TREE AND FOR CLASSIFYING A SAMPLE:</pre>
+<pre>
+      my $training_datafile = &quot;training.dat&quot;;
+      my $dt = Algorithm::DecisionTree-&gt;new( 
+                               training_datafile =&gt; $training_datafile,
+      );
+      $dt-&gt;get_training_data();
+      $dt-&gt;show_training_data();
+      my $root_node = $dt-&gt;construct_decision_tree_classifier();
+      $root_node-&gt;display_decision_tree(&quot;   &quot;);
+      my @test_sample = qw /exercising=&gt;never 
+                            smoking=&gt;heavy 
+                            fatIntake=&gt;heavy 
+                            videoAddiction=&gt;heavy /;
+      $dt-&gt;classify($root_node, @test_sample);</pre>
+<pre>
+  # For the above calls to work, the format in which the training data is made
+  # available to the decision-tree constructor new() must meet certain 
+  # assumptions.  (See the training.dat file in the examples directory.) The
+  # training datafile must declare the class names, the feature names and 
+  # the names of the different possible values for the features.  The rest of
+  # the training datafile is expected to contain the training samples in the 
+  # form of a multi-column table.</pre>
+<pre>
+  # FOR GENERATING TRAINING DATA:</pre>
+<pre>
+      use Algorithm::DecisionTree;
+      my $parameter_file = &quot;param.txt&quot;;
+      my $output_data_file = &quot;training.dat&quot;;
+      my $data_gen = Algorithm::DecisionTree-&gt;training_data_generator( 
+                                  output_datafile =&gt; $output_data_file,
+                                  parameter_file    =&gt; $parameter_file,
+                                  number_of_training_samples =&gt; 35,
+      );
+      $data_gen-&gt;read_parameter_file();
+      $data_gen-&gt;gen_training_data();
+      $data_gen-&gt;write_training_data_to_file();</pre>
+<pre>
+  # For the above calls to work, the parameter file must obey certain 
+  # assumptions.  (See the param.txt file in the examples directory.) The
+  # parameter file must declare the class names, the class priors, the 
+  # feature names and the different possible values for the features.
+  # The parameter file is also expected to present information on how
+  # you want the data vectors to be biased for the different classes.</pre>
+<p>
+</p>
+<hr />
+<h1><a name="description">DESCRIPTION</a></h1>
+<p><strong>Algorithm::DecisionTree</strong> is a <em>perl5</em> module for
+constructing a decision tree from a training datafile
+containing multidimensional data.  In one form or another,
+decision trees have been around for about fifty years. But
+their popularity during the last decade is owing to the
+entropy-based method proposed by Ross Quinlan for their
+construction.  Fundamental to Quinlan's approach is the
+notion that a decision node in a tree should be split only
+if the entropy at the ensuing child nodes will be less than
+the entropy at the node in question.  The implementation
+presented here is based on the same idea.</p>
+<p>For those not familiar with decision tree ideas, the
+traditional way to classify multidimensional data is to
+start with a feature space whose dimensionality is the same
+as that of the data.  Each feature in this space would
+correspond to the attribute that each dimension of the data
+measures.  You then use the training data to carve up the
+feature space into different regions, each corresponding to
+a different class.  Subsequently, when you are trying to
+classify a new data sample, you locate it in the feature
+space and find the class label of the region to which it
+belongs.  One can also give the data point the same class
+label as that of the nearest training sample.  (This is
+referred to as the nearest neighbor classification.)</p>
+<p>A decision tree classifier works differently.  When you
+construct a decision tree, you select for the root node a
+feature test that can be expected to maximally
+ddisambiguate the class labels that could be associated with
+the data you are trying to classify.  You then attach to the
+root node a set of child nodes, one for each value of the
+feature you chose at the root node. Now at each child node
+you pose the same question that you posed when you found the
+best feature to use at the root node: What feature at the
+child node in question would maximally disambiguate the
+class labels to be associated with a given data vector
+assuming that the data vector passed the root node on the
+branch that corresponds to the child node in question.  The
+feature that is best at each node is the one that causes the
+maximal reduction in class entropy at that node.</p>
+<p>As the reader would expect, the two key steps in any
+approach to decision-tree based classification are the
+construction of the decision tree itself from a file
+containing the training data, and then using the decision
+tree thus obtained for classifying the data.</p>
+<p>In addition to the above two key steps, the implementation
+presented here also allows you to generate your own training
+data. Generating your own training data, using it for
+constructing a decision-tree classifier and subsequently
+testing the classifier on a test set of data is a good way
+to develop greater proficiency with decision trees.</p>
+<p>What is cools about decision tree classification is that it
+gives you soft classification, meaning it may associate more
+than one class label with a given data vector.  When this
+happens, it may mean that your classes are indeed
+overlapping in the underlying feature space.  It could also
+mean that you simply have not supplied sufficient training
+data to the decision tree classifier.</p>
+<p>
+</p>
+<hr />
+<h1><a name="methods">METHODS</a></h1>
+<p>The module provides the following methods for decision-tree
+induction from training data in a diskfile, for data
+classification with the decision tree, and for generating
+your own training data:</p>
+<dl>
+<dt><strong><a name="new" class="item"><strong>new()</strong></a></strong></dt>
+
+<dd>
+<pre>
+    my $dt = Algorithm::DecisionTree-&gt;new( 
+                                          training_datafile =&gt; $training_datafile,
+                                         );</pre>
+<p>A call to <a href="#new"><code>new()</code></a> constructs a new instance of the
+Algorithm::DecisionTree class.  For this call to make sense,
+the training data in the training datafile must be according
+to a certain format that is shown below.  (Also see the file
+training.dat in the examples directory.)</p>
+</dd>
+<dt><strong><a name="get_training_data" class="item"><strong>get_training_data()</strong></a></strong></dt>
+
+<dd>
+<p>After you have constructed a new instance of the Algorithm::DecisionTree
+class, you must now read in the training data that is contained in the
+file named above.  This you do by:</p>
+<pre>
+    $dt-&gt;get_training_data();</pre>
+<p>IMPORTANT: The training data file must in a format that
+makes sense to the decision tree constructor.  The
+information in this file should look like</p>
+<pre>
+    Class names: malignant benign</pre>
+<pre>
+    Feature names and their values:
+        videoAddiction =&gt; none low medium heavy
+        exercising =&gt; never occasionally regularly
+        smoking =&gt; heavy medium light never
+        fatIntake =&gt; low medium heavy</pre>
+<pre>
+    Training Data:</pre>
+<pre>
+    sample     class      videoAddiction   exercising    smoking   fatIntake
+    ==========================================================================</pre>
+<pre>
+    sample_0   benign     medium           occasionally  heavy     low
+    sample_1   malignant  none             occasionally  heavy     medium
+    sample_2   benign     low              occasionally  light     heavy
+    sample_3   malignant  medium           occasionally  heavy     heavy
+    ....
+    ....</pre>
+<p>IMPORTANT: Note that the class names, the number of classes,
+the feature names, and the possible values for the features
+can be anything that your data requires them to be.  The
+training data file that is generated by the data generation
+part of the module will be in the format shown above.  More
+on that later.</p>
+</dd>
+<dt><strong><a name="show_training_data" class="item"><strong>show_training_data()</strong></a></strong></dt>
+
+<dd>
+<p>If you wish to see the training data that was just digested by the module,
+call</p>
+<pre>
+    $dt-&gt;show_training_data();</pre>
+</dd>
+<dt><strong><a name="construct_decision_tree_classifier" class="item"><strong>construct_decision_tree_classifier()</strong></a></strong></dt>
+
+<dd>
+<p>After the training data is digested, it is time to construct 
+a decision tree classifier.  This you do by</p>
+<pre>
+    my $root_node = $dt-&gt;construct_decision_tree_classifier();</pre>
+<p>This call returns an instance of type Node.  The Node class is
+defined within the main package file, at its end.  So, don't 
+forget, that $root_node in the above example call will be
+instantiated to an instance of type Node.</p>
+</dd>
+<dt><strong><a name="display_decision_tree" class="item"><strong>display_decision_tree(&quot;   &quot;)</strong></a></strong></dt>
+
+<dd>
+<pre>
+    $root_node-&gt;display_decision_tree(&quot;   &quot;);</pre>
+<p>This will display the decision tree in your terminal window
+by using a recursively determined offset for each node and
+the display routine descends down the tree.</p>
+<p>I have intentionally left the syntax fragment $root_node in
+the above call to remind the reader that
+<a href="#display_decision_tree"><code>display_decision_tree()</code></a> is NOT called on the instance of the
+DecisionTree we constructed earlier, but on the Node
+instance returned by the call to
+<a href="#construct_decision_tree_classifier"><code>construct_decision_tree_classifier()</code></a>.</p>
+</dd>
+<dt><strong><a name="classify" class="item"><strong>classify($root_node, @test_sample)</strong></a></strong></dt>
+
+<dd>
+<pre>
+    my @test_sample = qw /exercising=&gt;never 
+                          smoking=&gt;heavy 
+                          fatIntake=&gt;heavy 
+                          videoAddiction=&gt;heavy /;
+    $dt-&gt;classify($root_node, @test_sample);</pre>
+<p>where, again, $root_node is an instance of type Node returned
+by the call to <a href="#construct_decision_tree_classifier"><code>construct_decision_tree_classifier()</code></a>.</p>
+</dd>
+<dt><strong><a name="training_data_generator" class="item"><strong>training_data_generator()</strong></a></strong></dt>
+
+<dd>
+<p>The training data generator is created by using its own constructor:</p>
+<pre>
+    my $parameter_file = &quot;param2.txt&quot;;
+    my $output_data_file = &quot;training.dat&quot;;
+    my $data_generator = Algorithm::DecisionTree-&gt;training_data_generator( 
+                              output_datafile =&gt; $output_data_file,
+                              parameter_file    =&gt; $parameter_file,
+                              number_of_training_samples =&gt; 35,
+                                                                         );</pre>
+</dd>
+<dt><strong><a name="read_parameter_file" class="item"><strong>read_parameter_file()</strong></a></strong></dt>
+
+<dd>
+<p>After you have constructed an instance of the data generator, you
+need to ask it to read the parameter file:</p>
+<pre>
+    $data_generator-&gt;read_parameter_file();</pre>
+<p>The parameter file is expected to be in the following format:</p>
+<pre>
+    # comment lines begin with the hash mark</pre>
+<pre>
+    class names:  malignant benign
+    class priors: 0.4 0.6</pre>
+<pre>
+    feature: smoking
+    values: heavy medium light never</pre>
+<pre>
+    feature: exercising
+    values: never occasionally regularly</pre>
+<pre>
+    feature: fatIntake
+    values: low medium heavy</pre>
+<pre>
+    feature: videoAddiction
+    values:  none low medium heavy</pre>
+<pre>
+    bias:  class: malignant</pre>
+<pre>
+          smoking:    heavy=0.7
+          exercising: never=0.7 
+          fatIntake:  heavy=0.5
+          videoAddiction:</pre>
+<pre>
+    bias:  class: benign</pre>
+<pre>
+          smoking:     heavy=0.1
+          exercising:  regularly=0.7
+          fatIntake:   low=0.6
+          videoAddiction:</pre>
+<p>See the parameter file param.txt in the example directory.
+Initially, it might be best to modify that file to suit your
+needs.</p>
+<p>IMPORTANT: You can use any names for the classes, can have
+any number of classes, can use any names for the features
+and their values.</p>
+<p>Also note the the important role played by the biasing
+information.  Without the biasing, your training data will
+be uniformly distributed with respect to all of the feature
+values and you will only get ambiguous classifications from
+the resulting decision tree classifier.  The biasing allows
+you express a higher or lower probability that a particular
+feature value should have for a given class.  The
+probability weight that is unused for each feature is
+distributed uniformly amongst the remaining feature values.
+I did experiment with with idea of assigning probability
+weights to multiple (or even all) of the values on a given
+feature, it does not add to the educational value you derive
+from the resulting training data.</p>
+<p>NOTE: if you do NOT give a bias for a feature (as is the
+case with the feature 'videoAddiction' above), equal weight
+is given to all its values.</p>
+</dd>
+<dt><strong><a name="gen_training_data" class="item"><strong>gen_training_data()</strong></a></strong></dt>
+
+<dd>
+<p>This call generators the training data from your parameter
+file:</p>
+<pre>
+    $data_generator-&gt;gen_training_data();</pre>
+</dd>
+<dt><strong><a name="write_training_data_to_file" class="item"><strong>write_training_data_to_file()</strong></a></strong></dt>
+
+<dd>
+<p>To write out the training data to a disk file:</p>
+<pre>
+    $data_generator-&gt;write_training_data_to_file();</pre>
+<p>This call will also display the training data in your 
+terminal window if the $debug1 is on.</p>
+</dd>
+</dl>
+<p>
+</p>
+<hr />
+<h1><a name="how_the_classification_results_are_displayed">HOW THE CLASSIFICATION RESULTS ARE DISPLAYED</a></h1>
+<p>A call such as</p>
+<pre>
+    my @test_sample = qw /exercising=&gt;never 
+                          smoking=&gt;heavy 
+                          fatIntake=&gt;heavy 
+                          videoAddiction=&gt;heavy /;
+    $dt-&gt;classify($root_node, @test_sample);</pre>
+<p>will return an answer like:</p>
+<pre>
+    Classification=&gt; Probability of class malignant: 0.461538461538462
+    Classification=&gt; Probability of class benign: 0.538461538461538</pre>
+<p>Note again the soft classification returned.  That is, if
+the probability distributions for the different classes
+overlap in the underlying feature space, the classifier will
+return all of the applicable class labels for a data vector
+along with the corresponding class probabilities.  Another
+reason for why the decision tree classifier may associate
+significant probabilities with multiple class labels is that
+you used inadequate number of training samples to induce the
+decision tree.  The good thing is that the classifier does
+not lie to you (unlike, say, a hard classification rule that
+would corresponding to a partitioning of the underlying
+feature space).  The decision tree classifier give you the
+best classification that can be made given the training data
+you fed into it.</p>
+<p>
+</p>
+<hr />
+<h1><a name="examples">EXAMPLES</a></h1>
+<p>See the examples directory in the distribution for how to
+generate the training data, how to induce a decision tree,
+and how to then classify the data using the decision tree.</p>
+<p>
+</p>
+<hr />
+<h1><a name="export">EXPORT</a></h1>
+<p>None by design.</p>
+<p>
+</p>
+<hr />
+<h1><a name="bugs">BUGS</a></h1>
+<p>Please notify the author if you encounter any bugs.  When
+sending email, please place the string 'DecisionTree' in the
+subject line.</p>
+<p>
+</p>
+<hr />
+<h1><a name="installation">INSTALLATION</a></h1>
+<p>The usual</p>
+<pre>
+    perl Makefile.PL
+    make
+    make test
+    make install</pre>
+<p>if you have root access.  If not,</p>
+<pre>
+    perl Makefile.PL prefix=/some/other/directory/
+    make
+    make test
+    make install</pre>
+<p>
+</p>
+<hr />
+<h1><a name="author">AUTHOR</a></h1>
+<p>Avinash Kak, <a href="mailto:kak@purdue.edu">kak@purdue.edu</a></p>
+<p>If you send email, please place the string &quot;DecisionTree&quot; in your
+subject line to get past my spam filter.</p>
+<p>
+</p>
+<hr />
+<h1><a name="copyright">COPYRIGHT</a></h1>
+<p>This library is free software; you can redistribute it and/or
+modify it under the same terms as Perl itself.</p>
+<pre>
+ Copyright 2010 Avinash Kak
+
+</pre>
+
+</body>
+
+</html>
