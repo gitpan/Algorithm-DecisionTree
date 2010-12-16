@@ -1,12 +1,19 @@
-DecisionTree-1.1.html
-examples/construct_dt_and_classify.pl
+DecisionTree-1.2.html
+examples/generate_training_data.pl
+examples/generate_test_data.pl
+examples/construct_dt_and_classify_one_sample.pl
+examples/classify_test_data_in_a_file.pl
 examples/param.txt
 examples/param2.txt
+examples/param3.txt
 examples/training.dat
-examples/training_data_generator.pl
+examples/testdata2.dat
+examples/test_data_class_labels.dat
+examples/README
 lib/Algorithm/DecisionTree.pm
 Makefile.PL
 MANIFEST			This list of files
 param.txt
+README
 t/test.t
 META.yml                                 Module meta-data (added by MakeMaker)

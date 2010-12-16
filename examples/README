@@ -1,0 +1,56 @@
+
+In order to become familiar with the Algorithm::DecisionTree module:
+
+  (1)    Run the 
+
+               training_data_generator.pl
+
+         script to create your training data. First run the
+         script as it is, and then make a copy of the
+         param.txt file, modify this parameter file as you
+         wish, and run the above the script with your version of
+         param.txt.
+
+
+  (2)    Next run the 
+
+                construct_dt_and_classify_one_sample.pl
+
+         script as it is.  Now modify the test sample in
+         this script and see what classification results you
+         get for the new test sample.  Next run this script
+         on the new training datafile that you yourself
+         created.  You would obviously need to use the test
+         samples that mention the feature and value names in
+         your own parameter file.
+
+
+  (3)    Now run the test data generator script by invoking 
+
+                generate_test_data.pl
+
+         As it is, it will put out 20 samples for testing. But you
+         can set that number to anything you wish.
+
+         The test data is dumped into a file without the class labels
+         for obvious reasons.  The class labels are dumped into a
+         separate file whose name you can specify in the above 
+         script.  As currently programmed, the name of this file is
+
+                test_data_class_labels.dat
+
+         By comparing the class labels returned by the classifier 
+         with the class labels in this file, you can assess the 
+         accuracy of the classifier.
+
+
+  (4)    Finally, run the classifier on the test datafile by
+
+         classify_test_data_in_a_file.pl  training.dat  testdata2.dat  out.txt
+
+         Note carefully the three arguments you must supply the script.
+         The first is for where the training data is, the second for 
+         where the test data is, and the last where the classification 
+         results will be deposited.
+
+

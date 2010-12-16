@@ -1,0 +1,23 @@
+Feature Order For Data:   videoAddiction exercising smoking fatIntake
+
+
+sample_0         none             occasionally     heavy            heavy
+sample_1         heavy            regularly        light            low
+sample_2         medium           never            light            heavy
+sample_3         heavy            occasionally     medium           heavy
+sample_4         medium           occasionally     never            medium
+sample_5         medium           occasionally     medium           heavy
+sample_6         low              regularly        medium           heavy
+sample_7         none             occasionally     heavy            low
+sample_8         none             never            medium           low
+sample_9         low              occasionally     never            medium
+sample_10        heavy            regularly        never            heavy
+sample_11        low              never            medium           medium
+sample_12        none             occasionally     medium           heavy
+sample_13        medium           never            heavy            medium
+sample_14        none             regularly        never            low
+sample_15        none             occasionally     heavy            low
+sample_16        none             regularly        never            low
+sample_17        heavy            regularly        medium           medium
+sample_18        none             occasionally     never            heavy
+sample_19        heavy            occasionally     medium           low

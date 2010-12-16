@@ -19,15 +19,15 @@ values:  none low medium heavy
 
 bias:  class: malignant 
 
-          smoking:    heavy=1.0
+          smoking:    heavy=0.7
           exercising: regularly=0.1 
           fatIntake:  heavy=0.7
           videoAddiction: 
 
 bias:  class: benign
 
-          smoking:     heavy=0.0
-          exercising:  regularly=0.9
+          smoking:     heavy=0.2
+          exercising:  regularly=0.7
           fatIntake:   heavy=0.2
           videoAddiction: 
 

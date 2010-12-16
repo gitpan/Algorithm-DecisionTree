@@ -17,7 +17,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '1.1';
+our $VERSION = '1.2';
 
 
 #############################   Constructors  #######################
@@ -33,8 +33,7 @@ sub training_data_generator {
         _output_datafile             =>   $args{output_datafile} 
                                           || croak("output_datafile required"),
         _parameter_file              =>   $args{parameter_file},
-        _number_of_training_samples  =>
-                                          $args{number_of_training_samples},
+        _number_of_training_samples  =>   $args{number_of_training_samples},
         _write_to_file               =>   $args{write_to_file} || 0,
         _debug1                      =>   $args{debug1} || 0,
         _debug2                      =>   $args{debug2} || 0,
@@ -46,7 +45,34 @@ sub training_data_generator {
     }, $class;
 }
 
-# Constructor for decision tree construction and classification:
+
+# Constructor for the test data generator:
+sub test_data_generator { 
+    my ($class, %args) = @_;
+    my @params = keys %args;
+    croak "\nYou have used a wrong name for a keyword argument " .
+          "--- perhaps a misspelling\n" 
+          if check_for_illegal_params3(@params) == 0;
+    bless {
+        _output_test_datafile        =>   $args{output_test_datafile} 
+                                  || croak("output_test_datafile required"),
+        _output_class_labels_file    =>   $args{"output_class_label_file"}
+                                  || croak("output_class_label_file required"),
+        _parameter_file              =>   $args{parameter_file},
+        _number_of_test_samples      =>   $args{number_of_test_samples},
+        _write_to_file               =>   $args{write_to_file} || 0,
+        _debug1                      =>   $args{debug1} || 0,
+        _debug2                      =>   $args{debug2} || 0,
+        _test_sample_records         =>   {},
+        _features_and_values_hash    =>   {},
+        _bias_hash                   =>   {},
+        _class_names                 =>   [],
+        _class_priors                =>   [],
+    }, $class;
+}
+
+
+# Constructor for decision tree induction and classification with the tree:
 sub new { 
     my ($class, %args) = @_;
     my @params = keys %args;
@@ -63,6 +89,7 @@ sub new {
         _features_and_values_hash    =>    {},
         _samples_class_label_hash    =>    {},
         _class_names                 =>    [],
+        _class_priors                =>    [],
     }, $class;
 }
 
@@ -73,8 +100,9 @@ sub classify {
     my $self = shift;
     my $root_node = shift;
     my @features_and_values = @_;
+    croak "Error in the names you have used for features and/or values" 
+                  if ! $self->check_names_used(@features_and_values);    
     my @class_names = @{$self->{_class_names}};
-    #print "classify() called for: @features_and_values\n";    
     my $feature_test = $root_node->get_feature();
     my $classification = $self->recursive_descent_for_classification( 
                                       $root_node, @features_and_values );
@@ -93,7 +121,6 @@ sub recursive_descent_for_classification {
     my @feature_and_values = @_;
     my @class_names = @{$self->{_class_names}};
     my $feature_test_at_node = $node->get_feature();
-    #print "testing for feature $feature_test_at_node\n";
     my $value_for_feature;
     my @remaining_features_and_values = ();
     foreach my $feature_and_value (@feature_and_values) {
@@ -104,7 +131,8 @@ sub recursive_descent_for_classification {
             push @remaining_features_and_values, $feature_and_value;
         }
     }
-    my $feature_value_combo = "$feature_test_at_node=>$value_for_feature";
+    my $feature_value_combo = "$feature_test_at_node=>$value_for_feature"
+                     if defined $feature_test_at_node;
     my @children = @{$node->get_children()};
     if (@children == 0) {
         my %answer;
@@ -137,12 +165,10 @@ sub construct_decision_tree_classifier {
     my @features = keys %features_and_values_hash;
     my @class_probabilities = map {$self->prior_probability_for_class($_)} 
                                                            @class_names;
-    my @entropies = map {$self->class_entropy_for_a_given_feature($_)} 
-                        @features;
-    my ($minimum, $index) = minimum(\@entropies);
-    my $root_node = Node->new($features[$index], 
-                           $minimum, 
-                           \@class_probabilities, []);
+    my $entropy = $self->class_entropy_on_priors();
+    my $root_node = Node->new( undef, 
+                               $entropy, 
+                               \@class_probabilities, []);
     $self->{_root_node} = $root_node;
     $self->recursive_descent($root_node);
     return $root_node;
@@ -152,32 +178,34 @@ sub recursive_descent {
     my $self = shift;
     my $node = shift;
     my %features_and_values_hash = %{$self->{_features_and_values_hash}};
+    my @features = keys %features_and_values_hash;
     my @class_names = @{$self->{_class_names}};
-    my $feature_at_node = $node->get_feature();
     my @features_and_values_on_branch = 
           @{$node->get_branch_features_and_values()};
-    my @values_for_feature = @{$features_and_values_hash{$feature_at_node}};
-    my @feature_value_combos = map {"$feature_at_node=>$_"} 
-                                   @values_for_feature;
-    foreach my $feature_and_value (@feature_value_combos) {
-        my @extended_branch_features_and_values;
-        if (!@features_and_values_on_branch) {
-            @extended_branch_features_and_values = ($feature_and_value);
-        } else {
-            @extended_branch_features_and_values =
-                @{deep_copy_array( \@features_and_values_on_branch )};
-            push @extended_branch_features_and_values, $feature_and_value;
-        }
-        my ($best_feature, $best_feature_entropy) = 
-          $self->best_feature_calculator(@extended_branch_features_and_values);
-        next if !defined($best_feature);
-        if ($best_feature_entropy < $node->get_entropy()) {
+    my ($best_feature, $best_feature_entropy) = 
+         $self->best_feature_calculator(@features_and_values_on_branch);
+    return if ! defined $best_feature;
+    $node->set_feature($best_feature);
+    if ($best_feature_entropy < $node->get_entropy()) {
+        my @values_for_feature = 
+              @{$features_and_values_hash{$best_feature}};
+        my @feature_value_combos = map {"$best_feature=>$_"} 
+                                               @values_for_feature;
+        foreach my $feature_and_value (@feature_value_combos) {
+            my @extended_branch_features_and_values;
+            if (!@features_and_values_on_branch) {
+                @extended_branch_features_and_values = ($feature_and_value);
+            } else {
+                @extended_branch_features_and_values =
+                    @{deep_copy_array( \@features_and_values_on_branch )};
+                push @extended_branch_features_and_values, $feature_and_value;
+            }
             my @class_probabilities = 
                map 
                {$self->probability_for_a_class_given_sequence_of_features_and_values(
                     $_, @extended_branch_features_and_values) }
                @class_names;
-            my $child_node = Node->new($best_feature, $best_feature_entropy,
+            my $child_node = Node->new( undef, $best_feature_entropy,
                                        \@class_probabilities,
                                        \@extended_branch_features_and_values);
             $node->add_child_link( $child_node );
@@ -213,10 +241,16 @@ sub best_feature_calculator {
         foreach my $value (@values) {
             my $feature_and_value_string = 
                 "$feature_tests_not_yet_used[$i]=>$value";
-            my  @extended_features_and_values_on_branch =
+            my  @extended_features_and_values_on_branch;
+            if (@features_and_values_on_branch) {
+                @extended_features_and_values_on_branch =
                   @{deep_copy_array(\@features_and_values_on_branch)};
-            push @extended_features_and_values_on_branch, 
+                push @extended_features_and_values_on_branch, 
                                       $feature_and_value_string;   
+            } else {
+                @extended_features_and_values_on_branch  =
+                    ($feature_and_value_string);
+            }                      
             if (!defined $entropy_for_new_feature) {
                 $entropy_for_new_feature =
                  $self->class_entropy_for_a_given_sequence_of_features_values(
@@ -245,6 +279,25 @@ sub best_feature_calculator {
 
 #################    Entropy Calculators       #####################
 
+sub class_entropy_on_priors {
+    my $self = shift;
+    my @class_names = @{$self->{_class_names}};
+#    my @priors = map {$self->prior_probability_for_class($_)} @class_names;
+    my $entropy;
+    foreach my $class (@class_names) {
+        my $prob = $self->prior_probability_for_class($class);
+        my $log_prob = log($prob) / log(2) if ($prob >= 0.0001) && ($prob <= 0.999) ;
+        $log_prob = 0 if $prob < 0.0001;           # since X.log(X)->0 as X->0
+        $log_prob = 0 if $prob > 0.999;            # since log(1) = 0
+        if (!defined $entropy) {
+            $entropy = -1.0 * $prob * $log_prob; 
+            next;
+        }
+        $entropy += -1.0 * $prob * $log_prob;
+    }
+    return $entropy;
+}
+
 sub class_entropy_for_a_given_sequence_of_features_values {
     my $self = shift;
     my @array_of_features_and_values = @_;
@@ -254,8 +307,10 @@ sub class_entropy_for_a_given_sequence_of_features_values {
         my $prob = 
          $self->probability_for_a_class_given_sequence_of_features_and_values(
              $class, @array_of_features_and_values);
-        my $log_prob = log($prob) / log(2) if $prob != 0.0;
-        $log_prob = 0 if $prob == 0.0;
+        my $log_prob = log($prob) / log(2) 
+                  if ($prob >= 0.0001) && ($prob <= 0.999) ;
+        $log_prob = 0 if $prob < 0.0001;           # since X.log(X)->0 as X->0
+        $log_prob = 0 if $prob > 0.999;            # since log(1) = 0
         if (!defined $entropy) {
             $entropy = -1.0 * $prob * $log_prob; 
             next;
@@ -299,13 +354,15 @@ sub class_entropy_for_a_given_feature_and_given_value {
         my $prob = 
             $self->probability_for_a_class_given_feature_value($class,
                                                          $feature,$value);
-        my $log_prob = log($prob) / log(2) if $prob != 0.0;
-        $log_prob = 0 if $prob == 0.0;
+        my $log_prob = (log($prob) / log(2)) 
+                    if ($prob >= 0.0001) && ($prob <= 0.999) ;
+        $log_prob = 0 if $prob < 0.0001;           # since X.log(X)->0 as X->0
+        $log_prob = 0 if $prob > 0.999;            # since log(1) = 0
         if (!defined $entropy ) {
             $entropy = -1.0 * $prob * $log_prob;
             next;
         }
-        $entropy += -1.0 * $prob * $log_prob;
+        $entropy += - ($prob * $log_prob);
     }
     return $entropy;
 }
@@ -572,7 +629,8 @@ sub get_class_names {
     return @{$self->{_class_names}}
 }
 
-###################  For generating your own training data  ###############
+
+###################  For Generating Your Own Training Data  ###############
 
 sub read_parameter_file {
     my $self = shift;
@@ -638,6 +696,7 @@ sub read_parameter_file {
             }
         }
     }
+    $self->{_bias_hash} = \%bias_hash;
     if ($debug) {
         print "\n\nClass names: @class_names\n";
         my $num_of_classes = @class_names;
@@ -681,7 +740,6 @@ sub gen_training_data {
         }
         print "\n\n";
     }
-
     my $ele_index = 0;
     while ($ele_index < $how_many_training_samples) {
         my $sample_name = "sample" . "_$ele_index";
@@ -769,7 +827,8 @@ sub write_training_data_to_file {
     print FILEHANDLE "Feature names and their values:\n" 
                                 if $self->{_write_to_file};
     my @features = keys %features_and_values_hash;
-    die "You probably forgot to call gen_training_data() before calling formatted_display()" if @features == 0;
+    die "You probably forgot to call gen_training_data() before " .
+            "calling write_training_data_to_file()()" if @features == 0;
     my %feature_name_indices;
     foreach my $i (0..@features-1) {
         $feature_name_indices{$features[$i]} = $i + 2;
@@ -811,6 +870,151 @@ sub write_training_data_to_file {
     close FILEHANDLE;
 }
 
+#######################   For Generating Test Data   ####################
+
+# Although the following method could be combined with 
+# the gen_training_data() method, I have kept them separate
+# to make it easier to generate test data whose stats may not
+# be identical to that of the training data:
+sub gen_test_data {
+    my $self = shift;
+    my @class_names = @{$self->{_class_names}};
+    my @class_priors = @{$self->{_class_priors}};
+    my %test_sample_records;
+    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
+    my %bias_hash  = %{$self->{_bias_hash}};
+    my $how_many_test_samples = $self->{_number_of_test_samples};
+    my $file_for_class_labels = $self->{_output_class_labels_file};
+    open FILEHANDLE, ">$file_for_class_labels" 
+       or die "Unable to open file for writing class labels for test data: $!";
+    my %class_priors_to_unit_interval_map;
+    my $accumulated_interval = 0;
+    foreach my $i (0..@class_names-1) {
+        $class_priors_to_unit_interval_map{$class_names[$i]} 
+         = [$accumulated_interval, $accumulated_interval + $class_priors[$i]];
+        $accumulated_interval += $class_priors[$i];
+    }
+    if ($self->{_debug1}) {
+        print "Mapping of class priors to unit interval: \n";
+        while ( my ($k, $v) = each %class_priors_to_unit_interval_map ) {
+            print "$k =>  @$v\n";
+        }
+        print "\n\n";
+    }
+    my $ele_index = 0;
+    while ($ele_index < $how_many_test_samples) {
+        my $sample_name = "sample" . "_$ele_index";
+        $test_sample_records{$sample_name} = [];
+        # Generate class label for this training sample:                
+        my $roll_the_dice = rand(1.0);
+        my $class_label;
+        foreach my $class_name (keys %class_priors_to_unit_interval_map ) {
+            my $v = $class_priors_to_unit_interval_map{$class_name};
+            if ( ($roll_the_dice >= $v->[0]) && ($roll_the_dice <= $v->[1]) ) {
+                print FILEHANDLE "$sample_name    $class_name\n";
+                $class_label = $class_name;
+                last;
+            }
+        }
+        foreach my $feature (keys %features_and_values_hash) {
+            my @values = @{$features_and_values_hash{$feature}};
+            my $bias_string = $bias_hash{$class_label}->{$feature}->[0];
+            my $no_bias = 1.0 / @values;
+            $bias_string = "$values[0]" . "=$no_bias" if !defined $bias_string;
+            my %value_priors_to_unit_interval_map;
+            my @splits = split /\s*=\s*/, $bias_string;
+            my $chosen_for_bias_value = $splits[0];
+            my $chosen_bias = $splits[1];
+            my $remaining_bias = 1 - $chosen_bias;
+            my $remaining_portion_bias = $remaining_bias / (@values -1);
+            @splits = grep $_, @splits;
+            my $accumulated = 0;
+            foreach my $i (0..@values-1) {
+                if ($values[$i] eq $chosen_for_bias_value) {
+                    $value_priors_to_unit_interval_map{$values[$i]} 
+                        = [$accumulated, $accumulated + $chosen_bias];
+                    $accumulated += $chosen_bias;
+                } else {
+                    $value_priors_to_unit_interval_map{$values[$i]} 
+                      = [$accumulated, $accumulated + $remaining_portion_bias];
+                    $accumulated += $remaining_portion_bias;           
+                }
+            }
+            my $roll_the_dice = rand(1.0);
+            my $value_label;
+            foreach my $value_name (keys %value_priors_to_unit_interval_map ) {
+                my $v = $value_priors_to_unit_interval_map{$value_name};
+                if ( ($roll_the_dice >= $v->[0]) 
+                             && ($roll_the_dice <= $v->[1]) ) {
+                    push @{$test_sample_records{$sample_name}}, 
+                                            $feature . "=" . $value_name;
+                    $value_label = $value_name;
+                    last;
+                }
+            }
+            if ($self->{_debug2}) {
+                print "mapping feature value priors for '$feature' " .
+                                          "to unit interval: \n";
+                while ( my ($k, $v) = 
+                        each %value_priors_to_unit_interval_map ) {
+                    print "$k =>  @$v\n";
+                }
+                print "\n\n";
+            }
+        }
+        $ele_index++;
+    }
+    $self->{_test_sample_records} = \%test_sample_records;
+    close FILEHANDLE;
+    if ($self->{_debug2}) {
+        print "\n\nPRINTING TEST RECORDS:\n\n";
+        foreach my $kee (sort {sample_index($a) <=> sample_index($b)} 
+                                         keys %test_sample_records) {
+            print "$kee =>  @{$test_sample_records{$kee}}\n\n";
+        }
+    }
+}
+
+sub write_test_data_to_file {
+    my $self = shift;
+    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
+    my @class_names = @{$self->{_class_names}};
+    my $output_file = $self->{_output_test_datafile};
+    my %test_sample_records = %{$self->{_test_sample_records}};
+    print "\n\nDISPLAYING TEST RECORDS:\n\n" if $self->{_debug1};
+    open FILEHANDLE, ">$output_file";
+    my @features = keys %features_and_values_hash;
+    die "You probably forgot to read the parameter file before calling " .
+                 "write_test_data_to_file()"   if @features == 0;
+    print "Feature Order For Data:   @features\n\n\n" if $self->{_debug1};
+    print FILEHANDLE "Feature Order For Data:   @features\n\n\n";
+    my %feature_name_indices;
+    foreach my $i (0..@features-1) {
+        $feature_name_indices{$features[$i]} = $i + 1;
+    }
+    my $num_of_columns = @features + 1;
+    my $field_width = '@' . "<" x $self->find_longest_feature_or_value();
+    use English;
+    my $fmt = "$field_width  " x $num_of_columns;
+    foreach my $kee (sort {sample_index($a) <=> sample_index($b)} 
+                                     keys %test_sample_records) {
+        my @record = @{$test_sample_records{$kee}};
+        my @args_for_formline;
+        $args_for_formline[0] = $kee;
+        foreach my $item (@record) {
+            $item =~ /(.+)=(.+)/;
+            my ($item_name, $item_value) = ($1, $2);
+            $args_for_formline[ $feature_name_indices{$item_name} ] 
+                                                 = $item_value;
+        }
+        formline( $fmt, @args_for_formline );
+        print $ACCUMULATOR, "\n" if $self->{_debug1};
+        print FILEHANDLE $ACCUMULATOR, "\n" if $self->{_write_to_file};
+        $ACCUMULATOR = "";
+    }
+    close FILEHANDLE;
+}
+
 sub find_longest_feature_or_value {
     my $self = shift;
     my %features_and_values_hash = %{$self->{_features_and_values_hash}};
@@ -825,6 +1029,23 @@ sub find_longest_feature_or_value {
     }
     return $max_length;
 }
+
+sub check_names_used {
+    my $self = shift;
+    my @features_and_values_test_data = @_;
+    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
+    my @legal_feature_names = keys %features_and_values_hash;
+    foreach my $feature_and_value (@features_and_values_test_data) {
+        my ($feature, $value) = $feature_and_value =~ /(.+)=>(.+)/;
+        croak "Your test data has formatting error" 
+            if !defined($feature) || !defined($value);
+        return 0 if ! contained_in($feature, @legal_feature_names);
+        my @legal_values = @{$features_and_values_hash{$feature}};
+        return 0 if ! contained_in($value, @legal_values);
+    }
+    return 1;
+}
+
 
 ###########################  Utility Routines  #####################
 
@@ -888,7 +1109,6 @@ sub check_for_illegal_params1 {
                           /;
     my $found_match_flag;
     foreach my $param (@params) {
-
         foreach my $legal (@legal_params) {
             $found_match_flag = 0;
             if ($param eq $legal) {
@@ -909,7 +1129,6 @@ sub check_for_illegal_params2 {
                           /;
     my $found_match_flag;
     foreach my $param (@params) {
-
         foreach my $legal (@legal_params) {
             $found_match_flag = 0;
             if ($param eq $legal) {
@@ -922,6 +1141,29 @@ sub check_for_illegal_params2 {
     return $found_match_flag;
 }
 
+sub check_for_illegal_params3 {
+    my @params = @_;
+    my @legal_params = qw / output_test_datafile
+                            output_class_label_file
+                            parameter_file
+                            number_of_test_samples
+                            write_to_file
+                            debug1
+                            debug2
+                          /;
+    my $found_match_flag;
+    foreach my $param (@params) {
+        foreach my $legal (@legal_params) {
+            $found_match_flag = 0;
+            if ($param eq $legal) {
+                $found_match_flag = 1;
+                last;
+            }
+        }
+        last if $found_match_flag == 0;
+    }
+    return $found_match_flag;
+}
 
 #######################  Class Node  ###########################
 
@@ -951,6 +1193,12 @@ sub new {
 sub get_feature {                                  
     my $self = shift;                              
     return $self->{ _feature };                    
+}
+
+sub set_feature {
+    my $self = shift;
+    my $feature = shift;
+    $self->{_feature} = $feature;
 }
 
 sub get_entropy {                                  
@@ -992,18 +1240,25 @@ sub delete_all_links {
 sub display_decision_tree {
     my $self = shift;
     my $offset = shift;
-    my $feature_at_node = $self->get_feature();
-    my $entropy_at_node = $self->get_entropy();
-    my @class_probabilities = @{$self->get_class_probabilities()};
-    print "NODE:  $offset  feature: $feature_at_node   entropy: $entropy_at_node  class probs: @class_probabilities\n";
-    $offset = $offset . "   ";
-    foreach my $child (@{$self->get_children()}) {
-        $child->display_decision_tree($offset);
+    if (@{$self->get_children()}) {
+        my $feature_at_node = $self->get_feature() || " ";
+        my $entropy_at_node = $self->get_entropy();
+        my @class_probabilities = @{$self->get_class_probabilities()};
+        print "NODE:  $offset  feature: $feature_at_node   entropy: $entropy_at_node  class probs: @class_probabilities\n";
+        $offset = $offset . "   ";
+        foreach my $child (@{$self->get_children()}) {
+            $child->display_decision_tree($offset);
+        }
+    } else {
+        my $entropy_at_node = $self->get_entropy();
+        my @class_probabilities = @{$self->get_class_probabilities()};
+        print "NODE:  $offset  entropy: $entropy_at_node  class probs: @class_probabilities\n";
     }
 }
 
 1;
 
+=pod
 =head1 NAME
 
 Algorithm::DecisionTree - A pure-Perl implementation for
@@ -1037,19 +1292,20 @@ classifying data.
   # the training datafile is expected to contain the training samples in the 
   # form of a multi-column table.
 
+
   # FOR GENERATING TRAINING DATA:
 
       use Algorithm::DecisionTree;
       my $parameter_file = "param.txt";
       my $output_data_file = "training.dat";
-      my $data_gen = Algorithm::DecisionTree->training_data_generator( 
+      my $training_data_gen = Algorithm::DecisionTree->training_data_generator( 
                                   output_datafile => $output_data_file,
                                   parameter_file    => $parameter_file,
                                   number_of_training_samples => 35,
       );
-      $data_gen->read_parameter_file();
-      $data_gen->gen_training_data();
-      $data_gen->write_training_data_to_file(); 
+      $training_data_gen->read_parameter_file();
+      $training_data_gen->gen_training_data();
+      $training_data_gen->write_training_data_to_file(); 
 
   # For the above calls to work, the parameter file must obey certain 
   # assumptions.  (See the param.txt file in the examples directory.) The
@@ -1059,7 +1315,49 @@ classifying data.
   # you want the data vectors to be biased for the different classes.
 
 
+  # FOR GENERATING TEST DATA:
+
+      use Algorithm::DecisionTree;
+      my $parameter_file = "param.txt";
+      my $output_test_datafile = "testdata.dat";
+      my $output_class_label_file = "test_data_class_labels.dat";
+      my $test_data_gen = Algorithm::DecisionTree->test_data_generator(
+                   output_test_datafile    => $output_test_datafile,
+                   output_class_label_file => $output_class_label_file,
+                   parameter_file          => $parameter_file,
+                   write_to_file           => 1,
+                   number_of_test_samples  => 10,
+                   debug1                  => 1,
+      );
+      $test_data_gen->read_parameter_file();
+      $test_data_gen->gen_test_data();
+      $test_data_gen->write_test_data_to_file();
+
+  # The test data is deposited without the class labels in the file named for 
+  # the parameter output_test_datafile.  The class labels are deposited 
+  # in a separate file named for the parameter output_class_label_file.  The
+  # class names, the feature names, the feature values, and the probabilistic
+  # bias used for the test data are according to the information placed in
+  # the parameter file.
+
 =head1 CHANGES
+
+In addition to the removal of a couple of serious bugs,
+version 1.2 incorporates a number of enhancements: (1)
+Version 1.2 includes checks on the names of the features and
+values used in test data --- this is the data you want to
+classify with the decision tree classifier constructed by
+this module.  (2) Version 1.2 includes a separate
+constructor for generating test data.  To make it easier to
+generate test data whose probabilistic parameters may not be
+identical to that used for the training data, I have used
+separate routines for generating the test data.  (3) Version
+1.2 also includes in its examples directory a script that
+classifies the test data in a file and outputs the class
+labels into another file.  This is for folks who do not wish
+to write their own scripts using this module. (4) Version
+1.2 also includes addition to the documentation regarding
+the issue of numeric values for features.
 
 With Version 1.1, a call to classify() now returns a hash of
 the class labels and their associated probabilities.
@@ -1134,6 +1432,11 @@ happens, it may mean that your classes are indeed
 overlapping in the underlying feature space.  It could also
 mean that you simply have not supplied sufficient training
 data to the decision tree classifier.
+
+For a tutorial introduction to how a decision tree is
+constructed and used, please visit
+
+L<http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf>
 
 =head1 WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE
 
@@ -1223,6 +1526,23 @@ B<DISCLAIMER: There is obviously a lot more to good
 investing than what is captured by the silly little example
 here. However, it does the convey the sense in which the
 current module could be used.>
+
+=head1 WHAT HAPPENS WHEN THE FEATURE VALUES ARE NUMERIC
+
+The current module will treat a numeric value for a feature
+as just a string.  In that sense, there is no difference
+between a string value for a feature and a numeric value.
+This would obviously make the module unsuitable for
+applications in which a feature may take on a numeric value
+from a very large set of such values and you want feature
+values to be compared using numeric comparison predicates as
+opposed to string comparison predicates.  (Consider, for
+example, using color as an object feature in a computer
+vision application.)  The decision trees for applications in
+which the feature values are primarily numerical in nature
+are constructed differently, as explained in the tutorial at
+L<http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf>
+
 
 =head1 METHODS
 
@@ -1342,18 +1662,18 @@ The training data generator is created by using its own constructor:
 
     my $parameter_file = "param2.txt";
     my $output_data_file = "training.dat";
-    my $data_generator = Algorithm::DecisionTree->training_data_generator( 
+    my $training_data_gen = Algorithm::DecisionTree->training_data_generator( 
                               output_datafile => $output_data_file,
                               parameter_file    => $parameter_file,
                               number_of_training_samples => 35,
-                                                                         );
+    );
 
-=item B<$data_generatorC<< -> >>read_parameter_file():>
+=item B<$training_data_genC<< -> >>read_parameter_file():>
 
-After you have constructed an instance of the data generator, you
-need to ask it to read the parameter file:
+After you have constructed an instance of the training data
+generator, you need to ask it to read the parameter file:
 
-    $data_generator->read_parameter_file();
+    $training_data_gen->read_parameter_file();
 
 The parameter file is expected to be in the following format:
 
@@ -1416,27 +1736,88 @@ NOTE: if you do NOT express a bias for a feature (as is the
 case with the feature 'videoAddiction' above), equal weight
 is given to all its values.
 
-=item B<$data_generatorC<< -> >>gen_training_data():>
+=item B<$training_data_genC<< -> >>gen_training_data():>
 
 This call generators the training data from your parameter
 file:
 
-    $data_generator->gen_training_data();
+    $training_data_gen->gen_training_data();
 
-=item B<$data_generatorC<< -> >>write_training_data_to_file():>
+=item B<$training_data_genC<< -> >>write_training_data_to_file():>
 
 To write out the training data to a disk file:
 
-    $data_generator->write_training_data_to_file();
+    $training_data_gen->write_training_data_to_file();
 
 This call will also display the training data in your 
 terminal window if the $debug1 is on.
+
+=item B<test_data_generator():>
+
+The test data is generated by using its own constructor:
+
+    my $parameter_file = "param.txt";
+    my $output_test_datafile = "testdata1.dat";
+    my $output_class_label_file = "test_data_class_labels.dat";
+
+    my $test_data_gen = Algorithm::DecisionTree->test_data_generator(
+                       output_test_datafile    => $output_test_datafile,
+                       output_class_label_file => $output_class_label_file,
+                       parameter_file          => $parameter_file,
+                       write_to_file           => 1,
+                       number_of_test_samples  => 10,
+    );
+
+=item B<$test_data_genC<< -> >>read_parameter_file():>
+
+After you have constructed an instance of the test data
+generator, you need to ask it to read the parameter file.
+
+    $test_data_gen->read_parameter_file();
+
+This parameter file named in the call to the test-data
+generator constructor must possess the same structure as for
+generating the training data.  In most cases, you would want
+to use the same paramter file both for generating the training
+data and the test data.
+
+=item B<$test_data_genC<< -> >>gen_test_data():>
+
+This call generates the test data from your parameter file:
+
+    $training_data_gen->gen_training_data();
+
+=item B<$test_data_genC<< -> >>write_test_data_to_file():>
+
+To write out the test data to a disk file:
+
+    $test_data_gen->write_test_data_to_file();
+
+This call will also display the test data in your terminal
+window if the $debug1 is on.
+
 
 =back
 
 =head1 HOW THE CLASSIFICATION RESULTS ARE DISPLAYED
 
-A call such as
+It depends on whether you apply the classifier at once to
+all the data samples in a file, or whether you feed one data
+sample at a time into the classifier.
+
+For large test datasets, you would obviously want to process
+an entire file of test data at a time.  The best way to do
+this is to follow my script
+
+    classify_test_data_in_a_file.pl
+
+in the examples directly.  This script requires three
+command-line arguments, the first argument names the
+training datafile, the second the test datafile, and the
+third in which the classification results will be deposited.
+
+You can also invoke the classifier on one data sample at a
+time.  A call such as
 
     my @test_sample = qw /exercising=>never 
                           smoking=>heavy 
@@ -1483,9 +1864,17 @@ To become more familiar with the module, run the script
 to generate a training datafile according to the information
 placed in the file param.txt and then run the script 
 
-    construct_dt_and_classify.pl
+    construct_dt_and_classify_one_sample.pl
 
-to classify a new data vector that is in the script.
+to classify a new data sample that is in the script.  Next
+generate a test dataset by calling
+
+    generate_test_data.pl*
+
+This will deposit the test data in a file.  You can invoke the
+classifier on this file by an invocation like
+
+    classify_test_data_in_a_file.pl   training.dat   testdata2.dat   out.txt
 
 =head1 EXPORT
 

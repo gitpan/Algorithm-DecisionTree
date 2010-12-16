@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-use lib '../blib/lib', '../blib/arch';
+#use lib '../blib/lib', '../blib/arch';
 
 use strict;
 use Algorithm::DecisionTree;
@@ -13,10 +13,12 @@ my $dt = Algorithm::DecisionTree->new(
 
 $dt->get_training_data();
 
+
 # UNCOMMENT THE FOLLOWING LINE if you would like to see the training
 # data that was read from the disk file:
 
 #$dt->show_training_data();
+
 
 my $root_node = $dt->construct_decision_tree_classifier();
 
@@ -45,7 +47,6 @@ print "\nThe classification:\n";
 foreach my $class ($dt->get_class_names()) {
     print "    $class with probability $classification->{$class}\n";    
 }                               
-                                                         
 
 
 
@@ -62,21 +63,49 @@ __END__
 #my @features_and_values = qw/ exercising=>regularly smoking=>never fatIntake=>low videoAddiction=>heavy /;     
 #print "test prob for sequence @features_and_values\n";
 
-#my $entro1 = $dt->class_entropy_for_a_given_feature_and_given_value("exercising", "never");
-#print "\nClass entropy with feature exercising with value never: $entro1\n";
 
 
-#my $entro2 = $dt->class_entropy_for_a_given_feature("exercising");
-#print "\nClass entropy on feature exercising: $entro2\n";
+=foralso
+my $entro2 = $dt->class_entropy_for_a_given_feature("exercising");
+print "\nClass entropy on feature exercising: $entro2\n";
 
-#my $entro3 = $dt->class_entropy_for_a_given_feature("videoAddiction");
-#print "\nClass entropy on feature videoAddiction: $entro3\n";
+my $entro3 = $dt->class_entropy_for_a_given_feature("videoAddiction");
+print "\nClass entropy on feature videoAddiction: $entro3\n";
 
-#my $entro4 = $dt->class_entropy_for_a_given_feature("smoking");
-#print "\nClass entropy on feature smoking: $entro4\n";
+my $entro5 = $dt->class_entropy_for_a_given_feature("fatIntake");
+print "\nClass entropy on feature fatIntake: $entro5\n";
+=cut
 
-#my $entro5 = $dt->class_entropy_for_a_given_feature("fatIntake");
-#print "\nClass entropy on feature fatIntake: $entro5\n";
+
+=foralsoalso
+my $entro4 = $dt->class_entropy_for_a_given_feature("smoking");
+print "\nClass entropy on feature smoking: $entro4\n";
+
+
+my $entro6 = $dt->class_entropy_for_a_given_feature_and_given_value("smoking", "never");
+print "\nClass entropy with feature smoking with value never: $entro6\n";
+
+my $entro7 = $dt->class_entropy_for_a_given_feature_and_given_value("smoking", "medium");
+print "\nClass entropy with feature smoking with value medium: $entro7\n";
+
+my $entro8 = $dt->class_entropy_for_a_given_feature_and_given_value("smoking", "light");
+print "\nClass entropy with feature smoking with value light: $entro8\n";
+
+my $entro9 = $dt->class_entropy_for_a_given_feature_and_given_value("smoking", "heavy");
+print "\nClass entropy with feature smoking with value heavy: $entro9\n";
+
+my $prob10 = $dt->probability_for_feature_value("smoking", "never");
+print "\nProbability for smoking=>never: $prob10\n";
+
+my $prob11 = $dt->probability_for_feature_value("smoking", "medium");
+print "\nProbability for smoking=>medium: $prob11\n";
+
+my $prob12 = $dt->probability_for_feature_value("smoking", "light");
+print "\nProbability for smoking=>light: $prob12\n";
+
+my $prob13 = $dt->probability_for_feature_value("smoking", "heavy");
+print "\nProbability for smoking=>heavy: $prob13\n";
+=cut
 
 #my $entro6 = $dt->class_entropy_for_a_given_sequence_of_features_values(@features_and_values);
 #print "\nEntropy for the sequence of features and values @features_and_values: $entro6\n";
@@ -104,8 +133,6 @@ __END__
 #my $prob8 = $dt->probability_of_a_sequence_of_features_and_values(@features_and_values);
 #print "\nProbability for the sequence of features and values: $prob8\n";
 
-#my $prob9 = $dt->probability_for_feature_value("exercising", "never");
-#print "\nProbability for exercising=>never: $prob9\n";
 
 #my $prob10 = $dt->probability_for_feature_value("smoking", "heavy");
 #print "Probability for smoking=>heavy: $prob10\n";

@@ -19,11 +19,11 @@ classifying data.</title>
 
 <ul>
 
-	<li><a href="#name">NAME</a></li>
 	<li><a href="#synopsis">SYNOPSIS</a></li>
 	<li><a href="#changes">CHANGES</a></li>
 	<li><a href="#description">DESCRIPTION</a></li>
 	<li><a href="#what_practical_problem_is_solved_by_this_module">WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE</a></li>
+	<li><a href="#what_happens_when_the_feature_values_are_numeric">WHAT HAPPENS WHEN THE FEATURE VALUES ARE NUMERIC</a></li>
 	<li><a href="#methods">METHODS</a></li>
 	<li><a href="#how_the_classification_results_are_displayed">HOW THE CLASSIFICATION RESULTS ARE DISPLAYED</a></li>
 	<li><a href="#examples">EXAMPLES</a></li>
@@ -38,9 +38,6 @@ classifying data.</title>
 </div>
 <!-- INDEX END -->
 
-<p>
-</p>
-<h1><a name="name">NAME</a></h1>
 <p>Algorithm::DecisionTree - A pure-Perl implementation for
 constructing a decision tree from multidimensional training
 data and for using the decision tree thus induced for
@@ -79,14 +76,14 @@ classifying data.</p>
       use Algorithm::DecisionTree;
       my $parameter_file = &quot;param.txt&quot;;
       my $output_data_file = &quot;training.dat&quot;;
-      my $data_gen = Algorithm::DecisionTree-&gt;training_data_generator( 
+      my $training_data_gen = Algorithm::DecisionTree-&gt;training_data_generator( 
                                   output_datafile =&gt; $output_data_file,
                                   parameter_file    =&gt; $parameter_file,
                                   number_of_training_samples =&gt; 35,
       );
-      $data_gen-&gt;read_parameter_file();
-      $data_gen-&gt;gen_training_data();
-      $data_gen-&gt;write_training_data_to_file();</pre>
+      $training_data_gen-&gt;read_parameter_file();
+      $training_data_gen-&gt;gen_training_data();
+      $training_data_gen-&gt;write_training_data_to_file();</pre>
 <pre>
   # For the above calls to work, the parameter file must obey certain 
   # assumptions.  (See the param.txt file in the examples directory.) The
@@ -94,10 +91,51 @@ classifying data.</p>
   # feature names and the different possible values for the features.
   # The parameter file is also expected to present information on how
   # you want the data vectors to be biased for the different classes.</pre>
+<pre>
+  # FOR GENERATING TEST DATA:</pre>
+<pre>
+      use Algorithm::DecisionTree;
+      my $parameter_file = &quot;param.txt&quot;;
+      my $output_test_datafile = &quot;testdata.dat&quot;;
+      my $output_class_label_file = &quot;test_data_class_labels.dat&quot;;
+      my $test_data_gen = Algorithm::DecisionTree-&gt;test_data_generator(
+                   output_test_datafile    =&gt; $output_test_datafile,
+                   output_class_label_file =&gt; $output_class_label_file,
+                   parameter_file          =&gt; $parameter_file,
+                   write_to_file           =&gt; 1,
+                   number_of_test_samples  =&gt; 10,
+                   debug1                  =&gt; 1,
+      );
+      $test_data_gen-&gt;read_parameter_file();
+      $test_data_gen-&gt;gen_test_data();
+      $test_data_gen-&gt;write_test_data_to_file();</pre>
+<pre>
+  # The test data is deposited without the class labels in the file named for 
+  # the parameter output_test_datafile.  The class labels are deposited 
+  # in a separate file named for the parameter output_class_label_file.  The
+  # class names, the feature names, the feature values, and the probabilistic
+  # bias used for the test data are according to the information placed in
+  # the parameter file.</pre>
 <p>
 </p>
 <hr />
 <h1><a name="changes">CHANGES</a></h1>
+<p>In addition to the removal of a couple of serious bugs,
+version 1.2 incorporates a number of enhancements: (1)
+Version 1.2 includes checks on the names of the features and
+values used in test data --- this is the data you want to
+classify with the decision tree classifier constructed by
+this module.  (2) Version 1.2 includes a separate
+constructor for generating test data.  To make it easier to
+generate test data whose probabilistic parameters may not be
+identical to that used for the training data, I have used
+separate routines for generating the test data.  (3) Version
+1.2 also includes in its examples directory a script that
+classifies the test data in a file and outputs the class
+labels into another file.  This is for folks who do not wish
+to write their own scripts using this module. (4) Version
+1.2 also includes addition to the documentation regarding
+the issue of numeric values for features.</p>
 <p>With Version 1.1, a call to <a href="#classify"><code>classify()</code></a> now returns a hash of
 the class labels and their associated probabilities.
 (Previously, these results were just printed out in the
@@ -167,6 +205,9 @@ happens, it may mean that your classes are indeed
 overlapping in the underlying feature space.  It could also
 mean that you simply have not supplied sufficient training
 data to the decision tree classifier.</p>
+<p>For a tutorial introduction to how a decision tree is
+constructed and used, please visit</p>
+<p><a href="http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf">http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf</a></p>
 <p>
 </p>
 <hr />
@@ -247,6 +288,23 @@ all your previous traders.</p>
 investing than what is captured by the silly little example
 here. However, it does the convey the sense in which the
 current module could be used.</strong></p>
+<p>
+</p>
+<hr />
+<h1><a name="what_happens_when_the_feature_values_are_numeric">WHAT HAPPENS WHEN THE FEATURE VALUES ARE NUMERIC</a></h1>
+<p>The current module will treat a numeric value for a feature
+as just a string.  In that sense, there is no difference
+between a string value for a feature and a numeric value.
+This would obviously make the module unsuitable for
+applications in which a feature may take on a numeric value
+from a very large set of such values and you want feature
+values to be compared using numeric comparison predicates as
+opposed to string comparison predicates.  (Consider, for
+example, using color as an object feature in a computer
+vision application.)  The decision trees for applications in
+which the feature values are primarily numerical in nature
+are constructed differently, as explained in the tutorial at
+<a href="http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf">http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf</a></p>
 <p>
 </p>
 <hr />
@@ -364,19 +422,19 @@ class labels and whose values the associated probabilities.</p>
 <pre>
     my $parameter_file = &quot;param2.txt&quot;;
     my $output_data_file = &quot;training.dat&quot;;
-    my $data_generator = Algorithm::DecisionTree-&gt;training_data_generator( 
+    my $training_data_gen = Algorithm::DecisionTree-&gt;training_data_generator( 
                               output_datafile =&gt; $output_data_file,
                               parameter_file    =&gt; $parameter_file,
                               number_of_training_samples =&gt; 35,
-                                                                         );</pre>
+    );</pre>
 </dd>
-<dt><strong><a name="read_parameter_file" class="item"><strong>$data_generator<code>-&gt;</code>read_parameter_file():</strong></a></strong></dt>
+<dt><strong><a name="read_parameter_file" class="item"><strong>$training_data_gen<code>-&gt;</code>read_parameter_file():</strong></a></strong></dt>
 
 <dd>
-<p>After you have constructed an instance of the data generator, you
-need to ask it to read the parameter file:</p>
+<p>After you have constructed an instance of the training data
+generator, you need to ask it to read the parameter file:</p>
 <pre>
-    $data_generator-&gt;read_parameter_file();</pre>
+    $training_data_gen-&gt;read_parameter_file();</pre>
 <p>The parameter file is expected to be in the following format:</p>
 <pre>
     # comment lines begin with the hash mark</pre>
@@ -432,29 +490,88 @@ derive from the resulting training data.</p>
 case with the feature 'videoAddiction' above), equal weight
 is given to all its values.</p>
 </dd>
-<dt><strong><a name="gen_training_data" class="item"><strong>$data_generator<code>-&gt;</code>gen_training_data():</strong></a></strong></dt>
+<dt><strong><a name="gen_training_data" class="item"><strong>$training_data_gen<code>-&gt;</code>gen_training_data():</strong></a></strong></dt>
 
 <dd>
 <p>This call generators the training data from your parameter
 file:</p>
 <pre>
-    $data_generator-&gt;gen_training_data();</pre>
+    $training_data_gen-&gt;gen_training_data();</pre>
 </dd>
-<dt><strong><a name="write_training_data_to_file" class="item"><strong>$data_generator<code>-&gt;</code>write_training_data_to_file():</strong></a></strong></dt>
+<dt><strong><a name="write_training_data_to_file" class="item"><strong>$training_data_gen<code>-&gt;</code>write_training_data_to_file():</strong></a></strong></dt>
 
 <dd>
 <p>To write out the training data to a disk file:</p>
 <pre>
-    $data_generator-&gt;write_training_data_to_file();</pre>
+    $training_data_gen-&gt;write_training_data_to_file();</pre>
 <p>This call will also display the training data in your 
 terminal window if the $debug1 is on.</p>
+</dd>
+<dt><strong><a name="test_data_generator" class="item"><strong>test_data_generator():</strong></a></strong></dt>
+
+<dd>
+<p>The test data is generated by using its own constructor:</p>
+<pre>
+    my $parameter_file = &quot;param.txt&quot;;
+    my $output_test_datafile = &quot;testdata1.dat&quot;;
+    my $output_class_label_file = &quot;test_data_class_labels.dat&quot;;</pre>
+<pre>
+    my $test_data_gen = Algorithm::DecisionTree-&gt;test_data_generator(
+                       output_test_datafile    =&gt; $output_test_datafile,
+                       output_class_label_file =&gt; $output_class_label_file,
+                       parameter_file          =&gt; $parameter_file,
+                       write_to_file           =&gt; 1,
+                       number_of_test_samples  =&gt; 10,
+    );</pre>
+</dd>
+<dt><strong><strong>$test_data_gen<code>-&gt;</code>read_parameter_file():</strong></strong></dt>
+
+<dd>
+<p>After you have constructed an instance of the test data
+generator, you need to ask it to read the parameter file.</p>
+<pre>
+    $test_data_gen-&gt;read_parameter_file();</pre>
+<p>This parameter file named in the call to the test-data
+generator constructor must possess the same structure as for
+generating the training data.  In most cases, you would want
+to use the same paramter file both for generating the training
+data and the test data.</p>
+</dd>
+<dt><strong><a name="gen_test_data" class="item"><strong>$test_data_gen<code>-&gt;</code>gen_test_data():</strong></a></strong></dt>
+
+<dd>
+<p>This call generates the test data from your parameter file:</p>
+<pre>
+    $training_data_gen-&gt;gen_training_data();</pre>
+</dd>
+<dt><strong><a name="write_test_data_to_file" class="item"><strong>$test_data_gen<code>-&gt;</code>write_test_data_to_file():</strong></a></strong></dt>
+
+<dd>
+<p>To write out the test data to a disk file:</p>
+<pre>
+    $test_data_gen-&gt;write_test_data_to_file();</pre>
+<p>This call will also display the test data in your terminal
+window if the $debug1 is on.</p>
 </dd>
 </dl>
 <p>
 </p>
 <hr />
 <h1><a name="how_the_classification_results_are_displayed">HOW THE CLASSIFICATION RESULTS ARE DISPLAYED</a></h1>
-<p>A call such as</p>
+<p>It depends on whether you apply the classifier at once to
+all the data samples in a file, or whether you feed one data
+sample at a time into the classifier.</p>
+<p>For large test datasets, you would obviously want to process
+an entire file of test data at a time.  The best way to do
+this is to follow my script</p>
+<pre>
+    classify_test_data_in_a_file.pl</pre>
+<p>in the examples directly.  This script requires three
+command-line arguments, the first argument names the
+training datafile, the second the test datafile, and the
+third in which the classification results will be deposited.</p>
+<p>You can also invoke the classifier on one data sample at a
+time.  A call such as</p>
 <pre>
     my @test_sample = qw /exercising=&gt;never 
                           smoking=&gt;heavy 
@@ -498,8 +615,15 @@ and how to then classify new data using the decision tree.</p>
 <p>to generate a training datafile according to the information
 placed in the file param.txt and then run the script</p>
 <pre>
-    construct_dt_and_classify.pl</pre>
-<p>to classify a new data vector that is in the script.</p>
+    construct_dt_and_classify_one_sample.pl</pre>
+<p>to classify a new data sample that is in the script.  Next
+generate a test dataset by calling</p>
+<pre>
+    generate_test_data.pl*</pre>
+<p>This will deposit the test data in a file.  You can invoke the
+classifier on this file by an invocation like</p>
+<pre>
+    classify_test_data_in_a_file.pl   training.dat   testdata2.dat   out.txt</pre>
 <p>
 </p>
 <hr />
