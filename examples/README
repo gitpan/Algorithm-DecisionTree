@@ -8,7 +8,7 @@ In order to become familiar with the Algorithm::DecisionTree module:
          script to create your training data. First run the
          script as it is, and then make a copy of the
          param.txt file, modify this parameter file as you
-         wish, and run the above the script with your version of
+         wish, and run the above script with your version of
          param.txt.
 
 
@@ -16,13 +16,20 @@ In order to become familiar with the Algorithm::DecisionTree module:
 
                 construct_dt_and_classify_one_sample.pl
 
-         script as it is.  Now modify the test sample in
-         this script and see what classification results you
-         get for the new test sample.  Next run this script
-         on the new training datafile that you yourself
-         created.  You would obviously need to use the test
-         samples that mention the feature and value names in
-         your own parameter file.
+         script as it is.  
+
+         HIGHLY RECOMMENDED:  Always turn on the debug1 option
+                              on in the call to the constructor
+                              when experimenting with a training
+                              datafile for the first time.
+
+         Now modify the test sample in this script and see
+         what classification results you get for the new
+         test sample.  Next run this script on the new
+         training datafile that you yourself created.  You
+         would obviously need to use the test samples that
+         mention the feature and value names in your own
+         parameter file.
 
 
   (3)    Now run the test data generator script by invoking 

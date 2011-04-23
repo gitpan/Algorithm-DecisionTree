@@ -1,7 +1,7 @@
 package Algorithm::DecisionTree;
 
 #---------------------------------------------------------------------------
-# Copyright (c) 2010 Avinash Kak. All rights reserved.
+# Copyright (c) 2011 Avinash Kak. All rights reserved.
 # This program is free software.  You may modify and/or
 # distribute it under the same terms as Perl itself.
 # This copyright notice must remain attached to the file.
@@ -17,7 +17,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '1.2';
+our $VERSION = '1.3';
 
 
 #############################   Constructors  #######################
@@ -83,6 +83,7 @@ sub new {
         _training_datafile           =>   $args{training_datafile} 
                                         || croak("training_datafile required"),
         _root_node                   =>    undef,
+        _entropy_threshold           =>    $args{entropy_threshold} || 0.01,
         _debug1                      =>    $args{debug1} || 0,
         _debug2                      =>    $args{debug2} || 0,
         _training_data_hash          =>    {},
@@ -161,6 +162,9 @@ sub recursive_descent_for_classification {
 sub construct_decision_tree_classifier {
     my $self = shift;
     my @class_names = @{$self->{_class_names}};
+    $self->determine_data_condition() if $self->{_debug1};
+    print "\nStarting construction of the decision tree:\n" 
+                              if $self->{_debug1};
     my %features_and_values_hash = %{$self->{_features_and_values_hash}};
     my @features = keys %features_and_values_hash;
     my @class_probabilities = map {$self->prior_probability_for_class($_)} 
@@ -184,9 +188,13 @@ sub recursive_descent {
           @{$node->get_branch_features_and_values()};
     my ($best_feature, $best_feature_entropy) = 
          $self->best_feature_calculator(@features_and_values_on_branch);
-    return if ! defined $best_feature;
     $node->set_feature($best_feature);
-    if ($best_feature_entropy < $node->get_entropy()) {
+    $node->display_node() if $self->{_debug1};
+    #die "500 nodes max reached" 
+    #      if (Node->how_many_nodes() == 500) && $self->{_debug1};
+    return if ! defined $best_feature;
+    if ($best_feature_entropy 
+               < $node->get_entropy() - $self->{_entropy_threshold}) {
         my @values_for_feature = 
               @{$features_and_values_hash{$best_feature}};
         my @feature_value_combos = map {"$best_feature=>$_"} 
@@ -276,6 +284,10 @@ sub best_feature_calculator {
     return $feature_tests_not_yet_used[$index], $minimum;
 }
 
+sub number_of_nodes_created {
+    Node->how_many_nodes();
+}
+
 
 #################    Entropy Calculators       #####################
 
@@ -307,6 +319,7 @@ sub class_entropy_for_a_given_sequence_of_features_values {
         my $prob = 
          $self->probability_for_a_class_given_sequence_of_features_and_values(
              $class, @array_of_features_and_values);
+        $prob = 1.0/@class_names if $prob == 0;
         my $log_prob = log($prob) / log(2) 
                   if ($prob >= 0.0001) && ($prob <= 0.999) ;
         $log_prob = 0 if $prob < 0.0001;           # since X.log(X)->0 as X->0
@@ -398,8 +411,19 @@ sub probability_for_a_class_given_sequence_of_features_and_values {
     # add up to 1 when summed over the different classes.
     my $sum_probability = 0;
     map {$sum_probability += $_} @array_of_class_probabilities;
-    @array_of_class_probabilities = map {$_ / $sum_probability} 
-                                        @array_of_class_probabilities;
+    # An important implementation issue here is what to do if a particular
+    # (feature, value) does NOT show up on any sample in the training file.
+    # When this happens, $sum_probability will be zero.  We take the 
+    # position that such a (feature,value) pair is agnostic about what
+    # it can tell us about the relative importance of classes.  So, for 
+    # such a pair, we set the class probabilities to reflect a uniform
+    # distribution:
+    if ($sum_probability == 0) {
+        @array_of_class_probabilities = (1.0/@class_names) x @class_names;
+    } else {
+        @array_of_class_probabilities = map {$_ / $sum_probability} 
+                                            @array_of_class_probabilities;
+    }
     my $index = get_index_at_value( $class_wanted, \@class_names );
     return $array_of_class_probabilities[$index];
 }
@@ -532,6 +556,42 @@ sub prior_probability_for_class {
     my @values = values %samples_class_label_hash;
     my @trues = grep {$_ eq $class} @values;
     return (1.0 * @trues) / $total_num_of_samples; 
+}
+
+###################  Data Condition Calculator  ###################
+
+sub determine_data_condition {
+    my $self = shift;
+    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
+    my @features = keys %features_and_values_hash;
+    my @values = values %features_and_values_hash;
+    my @class_names = @{$self->{_class_names}};
+
+    my $num_of_features = @features;
+    print "Number of features: $num_of_features\n\n";
+
+    my $max_num_values;
+    foreach my $i (0..@values-1) {
+        if ((!defined $max_num_values) || (@{$values[$i]} > $max_num_values)){
+            $max_num_values = @{$values[$i]};
+        }
+    }
+    print "Largest number of feature values is: $max_num_values\n";
+    my $estimated_number_of_nodes = $max_num_values ** @features;
+    print "\nWORST CASE SCENARIO: The decision tree COULD have as many as   \n   $estimated_number_of_nodes nodes. The exact number of nodes created depends\n   critically on the entropy_threshold used for node expansion.\n   (The default for this threshold is 0.01.)\n";
+    if ($estimated_number_of_nodes > 10000) {
+        print "\nTHIS IS WAY TOO MANY NODES. Consider using a relatively large\n   value for entropy_threshold to reduce the number of nodes created.\n";
+        print "\nDo you wish to continue? Enter 'y' if yes:  ";
+        die unless <STDIN> =~ /y(es)?/i;
+    }
+    print "\nI will start by showing you the probabilities of feature-value pairs in your data:\n\n";
+    foreach my $feature (@features) {
+        my @values_for_feature = @{$features_and_values_hash{$feature}};
+        foreach my $value (@values_for_feature) {
+            my $prob = $self->probability_for_feature_value($feature,$value); 
+            print "Probability of feature-value pair ($feature,$value): $prob\n"; 
+        }
+    }
 }
 
 ###################  Read Training Data From File  ###################
@@ -1124,6 +1184,7 @@ sub check_for_illegal_params1 {
 sub check_for_illegal_params2 {
     my @params = @_;
     my @legal_params = qw / training_datafile
+                            entropy_threshold
                             debug1
                             debug2
                           /;
@@ -1174,6 +1235,8 @@ package Node;
 use strict;                                                         
 use Carp;
 
+our $nodes_created = 0;
+
 # $feature is the feature test at the current node.
 # $branch_features_and_values is an anonymous array holding
 # the feature names and corresponding values on the path
@@ -1181,12 +1244,26 @@ use Carp;
 sub new {                                                           
     my ($class, $feature, $entropy, $class_probabilities, $branch_features_and_values) = @_; 
     bless {                                                         
+        _serial_number => $nodes_created++,
         _feature => $feature,                                       
         _entropy => $entropy,
         _class_probabilities => $class_probabilities,
         _branch_features_and_values => $branch_features_and_values,
         _linked_to => [],                                          
     }, $class;                                                     
+}
+
+sub get_serial_num {
+    my $self = shift;
+    $self->{_serial_number};
+}
+
+# This is a class method:
+sub how_many_nodes {
+    my $class = shift;
+    die "illegal invocation of a static method" 
+        unless $class eq 'Node';
+    $nodes_created;
 }
 
 # this returns the feature test at the current node
@@ -1237,14 +1314,25 @@ sub delete_all_links {
     $self->{_linked_to} = undef;        
 }
 
+sub display_node {
+    my $self = shift; 
+    my $feature_at_node = $self->get_feature() || " ";
+    my $entropy_at_node = $self->get_entropy();
+    my @class_probabilities = @{$self->get_class_probabilities()};
+    my $serial_num = $self->get_serial_num();
+    my @branch_features_and_values = @{$self->get_branch_features_and_values()};
+    print "\n\nNODE $serial_num:\n   feature test: $feature_at_node\n   entropy: $entropy_at_node\n   class probs: @class_probabilities\n   branch features and values to this node: @branch_features_and_values\n\n";
+}
+
 sub display_decision_tree {
     my $self = shift;
     my $offset = shift;
+    my $serial_num = $self->get_serial_num();
     if (@{$self->get_children()}) {
         my $feature_at_node = $self->get_feature() || " ";
         my $entropy_at_node = $self->get_entropy();
         my @class_probabilities = @{$self->get_class_probabilities()};
-        print "NODE:  $offset  feature: $feature_at_node   entropy: $entropy_at_node  class probs: @class_probabilities\n";
+        print "NODE $serial_num:  $offset  feature: $feature_at_node   entropy: $entropy_at_node  class probs: @class_probabilities\n";
         $offset = $offset . "   ";
         foreach my $child (@{$self->get_children()}) {
             $child->display_decision_tree($offset);
@@ -1252,7 +1340,7 @@ sub display_decision_tree {
     } else {
         my $entropy_at_node = $self->get_entropy();
         my @class_probabilities = @{$self->get_class_probabilities()};
-        print "NODE:  $offset  entropy: $entropy_at_node  class probs: @class_probabilities\n";
+        print "NODE $serial_num:  $offset  entropy: $entropy_at_node  class probs: @class_probabilities\n";
     }
 }
 
@@ -1273,6 +1361,8 @@ classifying data.
       my $training_datafile = "training.dat";
       my $dt = Algorithm::DecisionTree->new( 
                                training_datafile => $training_datafile,
+                               entropy_threshold => 0.05,
+                               debug1 => 1,
       );
       $dt->get_training_data();
       $dt->show_training_data();
@@ -1285,12 +1375,15 @@ classifying data.
       $dt->classify($root_node, @test_sample);
 
   # For the above calls to work, the format in which the training data is made
-  # available to the decision-tree constructor new() must meet certain 
-  # assumptions.  (See the training.dat file in the examples directory.) The
-  # training datafile must declare the class names, the feature names and 
-  # the names of the different possible values for the features.  The rest of
-  # the training datafile is expected to contain the training samples in the 
-  # form of a multi-column table.
+  # available to the decision-tree constructor new() must meet certain
+  # assumptions.  (See the training.dat file in the examples directory.)  The
+  # training datafile must declare the class names, the feature names and the
+  # names of the different possible values for the features.  The rest of the
+  # training datafile is expected to contain the training samples in the form of
+  # a multi-column table.
+
+  # HIGHLY RECOMMENDED: Always use the "debug1" option in the constructor call
+  # above when working with a dataset for the first time.
 
 
   # FOR GENERATING TRAINING DATA:
@@ -1341,6 +1434,20 @@ classifying data.
   # the parameter file.
 
 =head1 CHANGES
+
+Version 1.3 addresses the issue that arises when the header
+of a training datafile declares a certain possible value for
+a feature but that (feature,value) pair does NOT show up
+anywhere in the training data.  Version 1.3 also makes it
+possible for a user to control the size of the decision tree
+by changing the value of the parameter entropy_threshold.
+Additionally, Version 1.3 includes a method called
+determine_data_condition() that displays useful information
+regarding the size and some other attributes of the training
+data.  It also warns the user if the training data might
+result in a decision tree that would simply be much too
+large --- unless the user controls the size with the
+entropy_threshold parameter.
 
 In addition to the removal of a couple of serious bugs,
 version 1.2 incorporates a number of enhancements: (1)
@@ -1431,12 +1538,11 @@ than one class label with a given data vector.  When this
 happens, it may mean that your classes are indeed
 overlapping in the underlying feature space.  It could also
 mean that you simply have not supplied sufficient training
-data to the decision tree classifier.
-
-For a tutorial introduction to how a decision tree is
-constructed and used, please visit
-
+data to the decision tree classifier.  For a tutorial
+introduction to how a decision tree is constructed and used,
+please visit
 L<http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf>
+
 
 =head1 WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE
 
@@ -1520,12 +1626,30 @@ The chances are that, on the average, this approach would
 beat the performance of any of your individual traders who
 worked for you previously since the buy/sell decisions made
 by the computer would be based on the collective wisdom of
-all your previous traders. 
+all your previous traders.  B<DISCLAIMER: There is obviously
+a lot more to good investing than what is captured by the
+silly little example here. However, it does the convey the
+sense in which the current module could be used.>
 
-B<DISCLAIMER: There is obviously a lot more to good
-investing than what is captured by the silly little example
-here. However, it does the convey the sense in which the
-current module could be used.>
+=head1 WHAT HAPPENS If I HAVE "TOO MANY" FEATURES AND/OR "TOO MANY" POSSIBLE VALUES FOR THE FEATURES
+
+If n is the number of features and m the largest number for
+the possible values for any of the features, then, in the
+worst case, the algorithm would want to construct m to the
+power of n nodes.  In other words, the size of the decision
+tree grows exponentially as you increase either the number
+of features or the number of possible values for the
+features.  That is the bad news.  B<The good news is that
+you can control the actual number of nodes created by
+increasing the value of the parameter entropy_threshold in
+the call to the decision tree constructor.> The default
+value for this parameter is 0.001.
+
+B<It is always a good idea to keep the debug1 option set
+anytime you are experimenting with a new datafile> ---
+especially if your training has the potential to create an
+inordinately large decision tree.
+
 
 =head1 WHAT HAPPENS WHEN THE FEATURE VALUES ARE NUMERIC
 
@@ -1655,6 +1779,17 @@ where, again, $root_node is an instance of type Node returned
 by the call to construct_decision_tree_classifier().  The variable
 $classification holds a reference to a hash whose keys are the
 class labels and whose values the associated probabilities.
+
+
+=item B<determine_data_condition():>
+
+This method, automatically invoked when debug1 option is set
+in the call to the decision-tree constructor, displays
+useful information regarding your training data file.  This
+method also warns you if you are trying to construct a
+decision tree that may simply be much too large.  
+
+    $dt->determine_data_condition(); 
 
 =item B<training_data_generator():>
 
@@ -1914,7 +2049,7 @@ subject line to get past my spam filter.
 This library is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
- Copyright 2010 Avinash Kak
+ Copyright 2011 Avinash Kak
 
 =cut
 

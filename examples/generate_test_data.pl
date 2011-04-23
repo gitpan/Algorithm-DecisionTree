@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-#use lib '../blib/lib', '../blib/arch';
+use lib '../blib/lib', '../blib/arch';
 
 use strict;
 use Algorithm::DecisionTree;
@@ -14,7 +14,7 @@ my $test_data_gen = Algorithm::DecisionTree->test_data_generator(
                    output_class_label_file => $output_class_label_file,
                    parameter_file          => $parameter_file,
                    write_to_file           => 1,
-                   number_of_test_samples  => 20,
+                   number_of_test_samples  => 30,
     );
 
 $test_data_gen->read_parameter_file();

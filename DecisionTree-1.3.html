@@ -23,6 +23,7 @@ classifying data.</title>
 	<li><a href="#changes">CHANGES</a></li>
 	<li><a href="#description">DESCRIPTION</a></li>
 	<li><a href="#what_practical_problem_is_solved_by_this_module">WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE</a></li>
+	<li><a href="#what_happens_if_i_have_too_many_features_and_or_too_many_possible_values_for_the_features">WHAT HAPPENS If I HAVE &quot;TOO MANY&quot; FEATURES AND/OR &quot;TOO MANY&quot; POSSIBLE VALUES FOR THE FEATURES</a></li>
 	<li><a href="#what_happens_when_the_feature_values_are_numeric">WHAT HAPPENS WHEN THE FEATURE VALUES ARE NUMERIC</a></li>
 	<li><a href="#methods">METHODS</a></li>
 	<li><a href="#how_the_classification_results_are_displayed">HOW THE CLASSIFICATION RESULTS ARE DISPLAYED</a></li>
@@ -52,6 +53,8 @@ classifying data.</p>
       my $training_datafile = &quot;training.dat&quot;;
       my $dt = Algorithm::DecisionTree-&gt;new( 
                                training_datafile =&gt; $training_datafile,
+                               entropy_threshold =&gt; 0.05,
+                               debug1 =&gt; 1,
       );
       $dt-&gt;get_training_data();
       $dt-&gt;show_training_data();
@@ -64,12 +67,15 @@ classifying data.</p>
       $dt-&gt;classify($root_node, @test_sample);</pre>
 <pre>
   # For the above calls to work, the format in which the training data is made
-  # available to the decision-tree constructor new() must meet certain 
-  # assumptions.  (See the training.dat file in the examples directory.) The
-  # training datafile must declare the class names, the feature names and 
-  # the names of the different possible values for the features.  The rest of
-  # the training datafile is expected to contain the training samples in the 
-  # form of a multi-column table.</pre>
+  # available to the decision-tree constructor new() must meet certain
+  # assumptions.  (See the training.dat file in the examples directory.)  The
+  # training datafile must declare the class names, the feature names and the
+  # names of the different possible values for the features.  The rest of the
+  # training datafile is expected to contain the training samples in the form of
+  # a multi-column table.</pre>
+<pre>
+  # HIGHLY RECOMMENDED: Always use the &quot;debug1&quot; option in the constructor call
+  # above when working with a dataset for the first time.</pre>
 <pre>
   # FOR GENERATING TRAINING DATA:</pre>
 <pre>
@@ -120,6 +126,19 @@ classifying data.</p>
 </p>
 <hr />
 <h1><a name="changes">CHANGES</a></h1>
+<p>Version 1.3 addresses the issue that arises when the header
+of a training datafile declares a certain possible value for
+a feature but that (feature,value) pair does NOT show up
+anywhere in the training data.  Version 1.3 also makes it
+possible for a user to control the size of the decision tree
+by changing the value of the parameter entropy_threshold.
+Additionally, Version 1.3 includes a method called
+<a href="#determine_data_condition"><code>determine_data_condition()</code></a> that displays useful information
+regarding the size and some other attributes of the training
+data.  It also warns the user if the training data might
+result in a decision tree that would simply be much too
+large --- unless the user controls the size with the
+entropy_threshold parameter.</p>
 <p>In addition to the removal of a couple of serious bugs,
 version 1.2 incorporates a number of enhancements: (1)
 Version 1.2 includes checks on the names of the features and
@@ -204,10 +223,10 @@ than one class label with a given data vector.  When this
 happens, it may mean that your classes are indeed
 overlapping in the underlying feature space.  It could also
 mean that you simply have not supplied sufficient training
-data to the decision tree classifier.</p>
-<p>For a tutorial introduction to how a decision tree is
-constructed and used, please visit</p>
-<p><a href="http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf">http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf</a></p>
+data to the decision tree classifier.  For a tutorial
+introduction to how a decision tree is constructed and used,
+please visit
+<a href="http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf">http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf</a></p>
 <p>
 </p>
 <hr />
@@ -283,11 +302,29 @@ what you should instruct your computer to do.</p>
 beat the performance of any of your individual traders who
 worked for you previously since the buy/sell decisions made
 by the computer would be based on the collective wisdom of
-all your previous traders.</p>
-<p><strong>DISCLAIMER: There is obviously a lot more to good
-investing than what is captured by the silly little example
-here. However, it does the convey the sense in which the
-current module could be used.</strong></p>
+all your previous traders.  <strong>DISCLAIMER: There is obviously
+a lot more to good investing than what is captured by the
+silly little example here. However, it does the convey the
+sense in which the current module could be used.</strong></p>
+<p>
+</p>
+<hr />
+<h1><a name="what_happens_if_i_have_too_many_features_and_or_too_many_possible_values_for_the_features">WHAT HAPPENS If I HAVE &quot;TOO MANY&quot; FEATURES AND/OR &quot;TOO MANY&quot; POSSIBLE VALUES FOR THE FEATURES</a></h1>
+<p>If n is the number of features and m the largest number for
+the possible values for any of the features, then, in the
+worst case, the algorithm would want to construct m to the
+power of n nodes.  In other words, the size of the decision
+tree grows exponentially as you increase either the number
+of features or the number of possible values for the
+features.  That is the bad news.  <strong>The good news is that
+you can control the actual number of nodes created by
+increasing the value of the parameter entropy_threshold in
+the call to the decision tree constructor.</strong> The default
+value for this parameter is 0.001.</p>
+<p><strong>It is always a good idea to keep the debug1 option set
+anytime you are experimenting with a new datafile</strong> ---
+especially if your training has the potential to create an
+inordinately large decision tree.</p>
 <p>
 </p>
 <hr />
@@ -414,6 +451,17 @@ instance returned by the call to
 by the call to <a href="#construct_decision_tree_classifier"><code>construct_decision_tree_classifier()</code></a>.  The variable
 $classification holds a reference to a hash whose keys are the
 class labels and whose values the associated probabilities.</p>
+</dd>
+<dt><strong><a name="determine_data_condition" class="item"><strong>determine_data_condition():</strong></a></strong></dt>
+
+<dd>
+<p>This method, automatically invoked when debug1 option is set
+in the call to the decision-tree constructor, displays
+useful information regarding your training data file.  This
+method also warns you if you are trying to construct a
+decision tree that may simply be much too large.</p>
+<pre>
+    $dt-&gt;determine_data_condition();</pre>
 </dd>
 <dt><strong><a name="training_data_generator" class="item"><strong>training_data_generator():</strong></a></strong></dt>
 
@@ -666,7 +714,7 @@ subject line to get past my spam filter.</p>
 <p>This library is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.</p>
 <pre>
- Copyright 2010 Avinash Kak
+ Copyright 2011 Avinash Kak
 
 </pre>
 
