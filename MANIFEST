@@ -1,8 +1,10 @@
-DecisionTree-1.3.html
+DecisionTree-1.4.html
 examples/classify_test_data_in_a_file.pl
 examples/construct_dt_and_classify_one_sample.pl
 examples/generate_test_data.pl
 examples/generate_training_data.pl
+examples/store_dt_on_disk.pl
+examples/classify_from_disk_stored_dt.pl
 examples/out.txt
 examples/param.txt
 examples/param2.txt

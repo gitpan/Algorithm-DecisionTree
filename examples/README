@@ -32,7 +32,23 @@ In order to become familiar with the Algorithm::DecisionTree module:
          parameter file.
 
 
-  (3)    Now run the test data generator script by invoking 
+  (3)    If your decision tree is going to be very large, you may
+         need to change the values of the following constructor 
+         parameters in the experiments in (2) above:
+
+                    max_depth_desired
+
+                    entropy_threshold
+
+         The first parameter, max_depth_desired, controls the
+         depth of the tree from the root node, and the second
+         parameter, entropy_threshold, controls the resolution
+         in the entropy space.  The smaller the value for the
+         first parameter and the larger the value for the second
+         parameter, the smaller the decision tree.
+
+
+  (4)    Now run the test data generator script by invoking 
 
                 generate_test_data.pl
 
@@ -51,7 +67,7 @@ In order to become familiar with the Algorithm::DecisionTree module:
          accuracy of the classifier.
 
 
-  (4)    Finally, run the classifier on the test datafile by
+  (5)    Finally, run the classifier on the test datafile by
 
          classify_test_data_in_a_file.pl  training.dat  testdata2.dat  out.txt
 
@@ -61,3 +77,23 @@ In order to become familiar with the Algorithm::DecisionTree module:
          results will be deposited.
 
 
+=======================================================================
+
+
+FOR THE CASE OF VERY LARGE DECISION TREES:
+
+
+  Large decision trees can take a very long time to create.
+If that is the case with your application, having to create
+afresh a decision tree every time you want to classify
+something can quickly become tiresome.  If such is the case
+with your application, consider storing your decision tree
+in a diskfile.  Subsequently, you can use the disk-stored
+decision tree for your classification work.  The following
+scripts in this directory:
+
+      store_dt_on_disk.pl
+
+      classify_from_disk_stored_dt.pl
+
+show you how you can do that.

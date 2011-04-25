@@ -17,8 +17,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '1.3';
-
+our $VERSION = '1.4';
 
 #############################   Constructors  #######################
 
@@ -84,11 +83,13 @@ sub new {
                                         || croak("training_datafile required"),
         _root_node                   =>    undef,
         _entropy_threshold           =>    $args{entropy_threshold} || 0.01,
+        _max_depth_desired           =>    $args{max_depth_desired} || undef,
         _debug1                      =>    $args{debug1} || 0,
         _debug2                      =>    $args{debug2} || 0,
         _training_data_hash          =>    {},
         _features_and_values_hash    =>    {},
         _samples_class_label_hash    =>    {},
+        _feature_val_prob_hash       =>    {},
         _class_names                 =>    [],
         _class_priors                =>    [],
     }, $class;
@@ -190,8 +191,8 @@ sub recursive_descent {
          $self->best_feature_calculator(@features_and_values_on_branch);
     $node->set_feature($best_feature);
     $node->display_node() if $self->{_debug1};
-    #die "500 nodes max reached" 
-    #      if (Node->how_many_nodes() == 500) && $self->{_debug1};
+    return if defined($self->{_max_depth_desired}) &&
+        (@features_and_values_on_branch >= $self->{_max_depth_desired});
     return if ! defined $best_feature;
     if ($best_feature_entropy 
                < $node->get_entropy() - $self->{_entropy_threshold}) {
@@ -484,6 +485,8 @@ sub probability_for_feature_value {
     my $self = shift;
     my $feature = shift;
     my $value = shift;
+    return $self->{_feature_val_prob_hash}->{"$feature=>$value"} 
+      if exists($self->{_feature_val_prob_hash}->{"$feature=>$value"});
     my %features_and_values_hash = %{$self->{_features_and_values_hash}};
     my %training_data_hash = %{$self->{_training_data_hash}};
     my @values_for_feature = @{$features_and_values_hash{$feature}};
@@ -659,6 +662,15 @@ sub get_training_data {
     $self->{_features_and_values_hash} = \%features_and_values_hash;
     $self->{_samples_class_label_hash} = \%samples_class_label_hash;
     $self->{_training_data_hash} = \%training_data_hash;
+    my %feature_value_probability_hash;
+    foreach my $feature (@feature_names) {
+        my @values_for_feature = @{$features_and_values_hash{$feature}};
+        foreach my $value (@values_for_feature) {
+            $feature_value_probability_hash{"$feature=>$value"} =
+                  $self->probability_for_feature_value($feature,$value); 
+        }
+    }
+    $self->{_feature_val_prob_hash} = \%feature_value_probability_hash;
 }    
 
 sub show_training_data {
@@ -1185,6 +1197,7 @@ sub check_for_illegal_params2 {
     my @params = @_;
     my @legal_params = qw / training_datafile
                             entropy_threshold
+                            max_depth_desired
                             debug1
                             debug2
                           /;
@@ -1321,7 +1334,7 @@ sub display_node {
     my @class_probabilities = @{$self->get_class_probabilities()};
     my $serial_num = $self->get_serial_num();
     my @branch_features_and_values = @{$self->get_branch_features_and_values()};
-    print "\n\nNODE $serial_num:\n   feature test: $feature_at_node\n   entropy: $entropy_at_node\n   class probs: @class_probabilities\n   branch features and values to this node: @branch_features_and_values\n\n";
+    print "\n\nNODE $serial_num:\n   Branch features and values to this node: @branch_features_and_values\n   Class probabilities at current node: @class_probabilities\n   Entropy at current node: $entropy_at_node\n   Best feature test at current node: $feature_at_node\n\n";
 }
 
 sub display_decision_tree {
@@ -1435,19 +1448,38 @@ classifying data.
 
 =head1 CHANGES
 
+Version 1.4 should make things faster (and easier) for folks
+who want to use this module with training data that creates
+very large decision trees (that is, trees with tens of
+thousands or more nodes).  The speedup in Version 1.4 has
+been achieved by eliminating duplicate calculation of
+probabilities as the tree is expanded.  In addition, this
+version provides an additional constructor parameter,
+C<max_depth_desired> for controlling the size of the
+decisiotn tree.  This is in addition to the tree size
+control achieved by the parameter C<entropy_threshold> that
+was introduced in Version 1.3.  Since large decision trees
+can take a long time to create, you may find yourself
+wishing you could store a decision tree in a disk file and
+subsequently use the stored tree for classification.  The
+C<examples> directory contains two scripts,
+C<store_dt_on_disk.pl> and
+C<classify_from_disk_stored_dt.pl> that shows how can do
+exactly that with the help of the C<Storable> module.
+
 Version 1.3 addresses the issue that arises when the header
 of a training datafile declares a certain possible value for
 a feature but that (feature,value) pair does NOT show up
 anywhere in the training data.  Version 1.3 also makes it
 possible for a user to control the size of the decision tree
-by changing the value of the parameter entropy_threshold.
+by changing the value of the parameter C<entropy_threshold.>
 Additionally, Version 1.3 includes a method called
-determine_data_condition() that displays useful information
-regarding the size and some other attributes of the training
-data.  It also warns the user if the training data might
-result in a decision tree that would simply be much too
-large --- unless the user controls the size with the
-entropy_threshold parameter.
+C<determine_data_condition()> that displays useful
+information regarding the size and some other attributes of
+the training data.  It also warns the user if the training
+data might result in a decision tree that would simply be
+much too large --- unless the user controls the size with
+the entropy_threshold parameter.
 
 In addition to the removal of a couple of serious bugs,
 version 1.2 incorporates a number of enhancements: (1)
@@ -1466,14 +1498,6 @@ to write their own scripts using this module. (4) Version
 1.2 also includes addition to the documentation regarding
 the issue of numeric values for features.
 
-With Version 1.1, a call to classify() now returns a hash of
-the class labels and their associated probabilities.
-(Previously, these results were just printed out in the
-terminal window.) Now you should be able to write your own
-script that reads in the test data from a file and outputs
-the classification results for each data vector.  This
-version also includes some additional documentation and a
-general cleanup of the code.
 
 =head1 DESCRIPTION
 
@@ -1540,7 +1564,7 @@ overlapping in the underlying feature space.  It could also
 mean that you simply have not supplied sufficient training
 data to the decision tree classifier.  For a tutorial
 introduction to how a decision tree is constructed and used,
-please visit
+visit
 L<http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf>
 
 
@@ -1631,24 +1655,39 @@ a lot more to good investing than what is captured by the
 silly little example here. However, it does the convey the
 sense in which the current module could be used.>
 
-=head1 WHAT HAPPENS If I HAVE "TOO MANY" FEATURES AND/OR "TOO MANY" POSSIBLE VALUES FOR THE FEATURES
+=head1 WHAT HAPPENS IF THERE ARE JUST TOO MANY FEATURES AND/OR TOO MANY POSSIBLE VALUES FOR THE FEATURES
 
-If n is the number of features and m the largest number for
-the possible values for any of the features, then, in the
-worst case, the algorithm would want to construct m to the
-power of n nodes.  In other words, the size of the decision
-tree grows exponentially as you increase either the number
-of features or the number of possible values for the
-features.  That is the bad news.  B<The good news is that
-you can control the actual number of nodes created by
-increasing the value of the parameter entropy_threshold in
-the call to the decision tree constructor.> The default
-value for this parameter is 0.001.
+If C<n> is the number of features and C<m> the largest
+number for the possible values for any of the features,
+then, in the worst case, the algorithm would want to
+construct C<m**n> nodes.  In other words, the size of the
+decision tree grows exponentially as you increase either the
+number of features or the number of possible values for the
+features.  That is the bad news.  The B<good news> is that
+you have two constructor parameters at your disposal for
+controlling the size of the decision tree: The parameter
+C<max_depth_desired> controls the depth of the constructed
+tree from its root node, and the parameter
+C<entropy_threshold> controls the granularity with which the
+entropy space will be sampled.  The smaller the
+C<max_depth_desired> and the larger the
+C<entropy_threshold>, the smaller the size of the decision
+tree.  The default value for C<max_depth_desired> is the
+number of features specified in the training datafile, and
+the the default value for C<entropy_threshold> is 0.001.
 
-B<It is always a good idea to keep the debug1 option set
-anytime you are experimenting with a new datafile> ---
-especially if your training has the potential to create an
-inordinately large decision tree.
+The users of this module with a need to create very large
+decision trees should also consider storing the tree once
+constructed in a diskfile and then using the stored tree for
+classification work.  The scripts C<store_dt_on_disk.pl> and
+C<classify_from_disk_stored_dt.pl> in the C<examples>
+directory show you how you can do that with the help of
+Perl's Storable module.
+
+B<Also note that it is always a good idea to keep the debug1
+option set anytime you are experimenting with a new
+datafile> --- especially if your training datafile is likely
+to create an inordinately large decision tree.
 
 
 =head1 WHAT HAPPENS WHEN THE FEATURE VALUES ARE NUMERIC

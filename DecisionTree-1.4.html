@@ -23,7 +23,7 @@ classifying data.</title>
 	<li><a href="#changes">CHANGES</a></li>
 	<li><a href="#description">DESCRIPTION</a></li>
 	<li><a href="#what_practical_problem_is_solved_by_this_module">WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE</a></li>
-	<li><a href="#what_happens_if_i_have_too_many_features_and_or_too_many_possible_values_for_the_features">WHAT HAPPENS If I HAVE &quot;TOO MANY&quot; FEATURES AND/OR &quot;TOO MANY&quot; POSSIBLE VALUES FOR THE FEATURES</a></li>
+	<li><a href="#what_happens_if_there_are_just_too_many_features_and_or_too_many_possible_values_for_the_features">WHAT HAPPENS IF THERE ARE JUST TOO MANY FEATURES AND/OR TOO MANY POSSIBLE VALUES FOR THE FEATURES</a></li>
 	<li><a href="#what_happens_when_the_feature_values_are_numeric">WHAT HAPPENS WHEN THE FEATURE VALUES ARE NUMERIC</a></li>
 	<li><a href="#methods">METHODS</a></li>
 	<li><a href="#how_the_classification_results_are_displayed">HOW THE CLASSIFICATION RESULTS ARE DISPLAYED</a></li>
@@ -126,19 +126,37 @@ classifying data.</p>
 </p>
 <hr />
 <h1><a name="changes">CHANGES</a></h1>
+<p>Version 1.4 should make things faster (and easier) for folks
+who want to use this module with training data that creates
+very large decision trees (that is, trees with tens of
+thousands or more nodes).  The speedup in Version 1.4 has
+been achieved by eliminating duplicate calculation of
+probabilities as the tree is expanded.  In addition, this
+version provides an additional constructor parameter,
+<code>max_depth_desired</code> for controlling the size of the
+decisiotn tree.  This is in addition to the tree size
+control achieved by the parameter <code>entropy_threshold</code> that
+was introduced in Version 1.3.  Since large decision trees
+can take a long time to create, you may find yourself
+wishing you could store a decision tree in a disk file and
+subsequently use the stored tree for classification.  The
+<code>examples</code> directory contains two scripts,
+<code>store_dt_on_disk.pl</code> and
+<code>classify_from_disk_stored_dt.pl</code> that shows how can do
+exactly that with the help of the <code>Storable</code> module.</p>
 <p>Version 1.3 addresses the issue that arises when the header
 of a training datafile declares a certain possible value for
 a feature but that (feature,value) pair does NOT show up
 anywhere in the training data.  Version 1.3 also makes it
 possible for a user to control the size of the decision tree
-by changing the value of the parameter entropy_threshold.
+by changing the value of the parameter <code>entropy_threshold.</code>
 Additionally, Version 1.3 includes a method called
-<a href="#determine_data_condition"><code>determine_data_condition()</code></a> that displays useful information
-regarding the size and some other attributes of the training
-data.  It also warns the user if the training data might
-result in a decision tree that would simply be much too
-large --- unless the user controls the size with the
-entropy_threshold parameter.</p>
+<a href="#determine_data_condition"><code>determine_data_condition()</code></a> that displays useful
+information regarding the size and some other attributes of
+the training data.  It also warns the user if the training
+data might result in a decision tree that would simply be
+much too large --- unless the user controls the size with
+the entropy_threshold parameter.</p>
 <p>In addition to the removal of a couple of serious bugs,
 version 1.2 incorporates a number of enhancements: (1)
 Version 1.2 includes checks on the names of the features and
@@ -155,14 +173,6 @@ labels into another file.  This is for folks who do not wish
 to write their own scripts using this module. (4) Version
 1.2 also includes addition to the documentation regarding
 the issue of numeric values for features.</p>
-<p>With Version 1.1, a call to <a href="#classify"><code>classify()</code></a> now returns a hash of
-the class labels and their associated probabilities.
-(Previously, these results were just printed out in the
-terminal window.) Now you should be able to write your own
-script that reads in the test data from a file and outputs
-the classification results for each data vector.  This
-version also includes some additional documentation and a
-general cleanup of the code.</p>
 <p>
 </p>
 <hr />
@@ -225,7 +235,7 @@ overlapping in the underlying feature space.  It could also
 mean that you simply have not supplied sufficient training
 data to the decision tree classifier.  For a tutorial
 introduction to how a decision tree is constructed and used,
-please visit
+visit
 <a href="http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf">http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf</a></p>
 <p>
 </p>
@@ -309,22 +319,36 @@ sense in which the current module could be used.</strong></p>
 <p>
 </p>
 <hr />
-<h1><a name="what_happens_if_i_have_too_many_features_and_or_too_many_possible_values_for_the_features">WHAT HAPPENS If I HAVE &quot;TOO MANY&quot; FEATURES AND/OR &quot;TOO MANY&quot; POSSIBLE VALUES FOR THE FEATURES</a></h1>
-<p>If n is the number of features and m the largest number for
-the possible values for any of the features, then, in the
-worst case, the algorithm would want to construct m to the
-power of n nodes.  In other words, the size of the decision
-tree grows exponentially as you increase either the number
-of features or the number of possible values for the
-features.  That is the bad news.  <strong>The good news is that
-you can control the actual number of nodes created by
-increasing the value of the parameter entropy_threshold in
-the call to the decision tree constructor.</strong> The default
-value for this parameter is 0.001.</p>
-<p><strong>It is always a good idea to keep the debug1 option set
-anytime you are experimenting with a new datafile</strong> ---
-especially if your training has the potential to create an
-inordinately large decision tree.</p>
+<h1><a name="what_happens_if_there_are_just_too_many_features_and_or_too_many_possible_values_for_the_features">WHAT HAPPENS IF THERE ARE JUST TOO MANY FEATURES AND/OR TOO MANY POSSIBLE VALUES FOR THE FEATURES</a></h1>
+<p>If <code>n</code> is the number of features and <code>m</code> the largest
+number for the possible values for any of the features,
+then, in the worst case, the algorithm would want to
+construct <code>m**n</code> nodes.  In other words, the size of the
+decision tree grows exponentially as you increase either the
+number of features or the number of possible values for the
+features.  That is the bad news.  The <strong>good news</strong> is that
+you have two constructor parameters at your disposal for
+controlling the size of the decision tree: The parameter
+<code>max_depth_desired</code> controls the depth of the constructed
+tree from its root node, and the parameter
+<code>entropy_threshold</code> controls the granularity with which the
+entropy space will be sampled.  The smaller the
+<code>max_depth_desired</code> and the larger the
+<code>entropy_threshold</code>, the smaller the size of the decision
+tree.  The default value for <code>max_depth_desired</code> is the
+number of features specified in the training datafile, and
+the the default value for <code>entropy_threshold</code> is 0.001.</p>
+<p>The users of this module with a need to create very large
+decision trees should also consider storing the tree once
+constructed in a diskfile and then using the stored tree for
+classification work.  The scripts <code>store_dt_on_disk.pl</code> and
+<code>classify_from_disk_stored_dt.pl</code> in the <code>examples</code>
+directory show you how you can do that with the help of
+Perl's Storable module.</p>
+<p><strong>Also note that it is always a good idea to keep the debug1
+option set anytime you are experimenting with a new
+datafile</strong> --- especially if your training datafile is likely
+to create an inordinately large decision tree.</p>
 <p>
 </p>
 <hr />

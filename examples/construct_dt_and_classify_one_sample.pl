@@ -11,8 +11,9 @@ my $training_datafile = "training.dat";
 #   each node of the decision being constructed:
 my $dt = Algorithm::DecisionTree->new( 
                               training_datafile => $training_datafile,
+#                              entropy_threshold => 0.1,
+#                              max_depth_desired => 3,
                               debug1 => 1,                          
-#                              entropy_threshold => 0.1
     );
 
 $dt->get_training_data();
@@ -29,6 +30,7 @@ my $root_node = $dt->construct_decision_tree_classifier();
 #   UNCOMMENT THE FOLLOWING LINE if you would like to see the decision
 #   tree displayed in your terminal window:
 #$root_node->display_decision_tree("     ");           
+
 
 my @test_sample = qw /exercising=>never 
                       smoking=>heavy 
