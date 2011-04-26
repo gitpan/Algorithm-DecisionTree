@@ -23,7 +23,7 @@ classifying data.</title>
 	<li><a href="#changes">CHANGES</a></li>
 	<li><a href="#description">DESCRIPTION</a></li>
 	<li><a href="#what_practical_problem_is_solved_by_this_module">WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE</a></li>
-	<li><a href="#what_happens_if_there_are_just_too_many_features_and_or_too_many_possible_values_for_the_features">WHAT HAPPENS IF THERE ARE JUST TOO MANY FEATURES AND/OR TOO MANY POSSIBLE VALUES FOR THE FEATURES</a></li>
+	<li><a href="#what_happens_if_the_number_of_features_and_or_values_is_large">WHAT HAPPENS IF THE NUMBER OF FEATURES AND/OR VALUES IS LARGE</a></li>
 	<li><a href="#what_happens_when_the_feature_values_are_numeric">WHAT HAPPENS WHEN THE FEATURE VALUES ARE NUMERIC</a></li>
 	<li><a href="#methods">METHODS</a></li>
 	<li><a href="#how_the_classification_results_are_displayed">HOW THE CLASSIFICATION RESULTS ARE DISPLAYED</a></li>
@@ -53,7 +53,6 @@ classifying data.</p>
       my $training_datafile = &quot;training.dat&quot;;
       my $dt = Algorithm::DecisionTree-&gt;new( 
                                training_datafile =&gt; $training_datafile,
-                               entropy_threshold =&gt; 0.05,
                                debug1 =&gt; 1,
       );
       $dt-&gt;get_training_data();
@@ -75,7 +74,29 @@ classifying data.</p>
   # a multi-column table.</pre>
 <pre>
   # HIGHLY RECOMMENDED: Always use the &quot;debug1&quot; option in the constructor call
-  # above when working with a dataset for the first time.</pre>
+  # above when working with a training dataset for the first time.</pre>
+<pre>
+  # If your training file specifies a large number of features or a large
+  # number of values for the features, the above constructor call could result
+  # in a decision tree that is simply much too large (and much too slow to
+  # construct).  For such cases, consider using following additional options in
+  # the constructor call shown above:</pre>
+<pre>
+      my $dt = Algorithm::DecisionTree-&gt;new( 
+                               training_datafile =&gt; $training_datafile,
+                               max_depth_desired =&gt; some_number,
+                               entropy_threshold =&gt; some_value,
+                               debug1 =&gt; 1,
+      );
+  
+  # where for max_depth_desired you should choose a number that is less than the
+  # number of features in your training file. This will set the depth of your
+  # decision tree to max_depth_desired. The algorithm will automatically use the
+  # BEST max_depth_desired features --- best in the sense of being the most
+  # discriminative --- for constructing the decision tree.  The parameter
+  # entropy_threshold sets the granularity with which the entropies will be
+  # sampled.  Its default value is 0.001.  The larger the value you choose for
+  # entropy_threshold, the smaller the tree.</pre>
 <pre>
   # FOR GENERATING TRAINING DATA:</pre>
 <pre>
@@ -91,12 +112,12 @@ classifying data.</p>
       $training_data_gen-&gt;gen_training_data();
       $training_data_gen-&gt;write_training_data_to_file();</pre>
 <pre>
-  # For the above calls to work, the parameter file must obey certain 
+  # For the above calls to work, the parameter file must obey certain
   # assumptions.  (See the param.txt file in the examples directory.) The
-  # parameter file must declare the class names, the class priors, the 
-  # feature names and the different possible values for the features.
-  # The parameter file is also expected to present information on how
-  # you want the data vectors to be biased for the different classes.</pre>
+  # parameter file must declare the class names, the class priors, the feature
+  # names and the different possible values for the features.  The parameter
+  # file is also expected to present information on how you want the data
+  # vectors to be biased for the different classes.</pre>
 <pre>
   # FOR GENERATING TEST DATA:</pre>
 <pre>
@@ -116,34 +137,37 @@ classifying data.</p>
       $test_data_gen-&gt;gen_test_data();
       $test_data_gen-&gt;write_test_data_to_file();</pre>
 <pre>
-  # The test data is deposited without the class labels in the file named for 
-  # the parameter output_test_datafile.  The class labels are deposited 
-  # in a separate file named for the parameter output_class_label_file.  The
-  # class names, the feature names, the feature values, and the probabilistic
-  # bias used for the test data are according to the information placed in
-  # the parameter file.</pre>
+  # The test data is deposited without the class labels in the file named for
+  # the parameter output_test_datafile.  The class labels are deposited in a
+  # separate file named for the parameter output_class_label_file.  The class
+  # names, the feature names, the feature values, and the probabilistic bias
+  # used for the test data are according to the information placed in the
+  # parameter file.</pre>
 <p>
 </p>
 <hr />
 <h1><a name="changes">CHANGES</a></h1>
+<p>Some of the key elements of the documentation were cleaned
+up and made more readable in Version 1.41.  The
+implementation code remains unchanged from Version 1.4.</p>
 <p>Version 1.4 should make things faster (and easier) for folks
 who want to use this module with training data that creates
 very large decision trees (that is, trees with tens of
-thousands or more nodes).  The speedup in Version 1.4 has
-been achieved by eliminating duplicate calculation of
-probabilities as the tree is expanded.  In addition, this
+thousands or more decision nodes).  The speedup in Version
+1.4 has been achieved by eliminating duplicate calculation
+of probabilities as the tree grows.  In addition, this
 version provides an additional constructor parameter,
 <code>max_depth_desired</code> for controlling the size of the
 decisiotn tree.  This is in addition to the tree size
 control achieved by the parameter <code>entropy_threshold</code> that
 was introduced in Version 1.3.  Since large decision trees
 can take a long time to create, you may find yourself
-wishing you could store a decision tree in a disk file and
-subsequently use the stored tree for classification.  The
-<code>examples</code> directory contains two scripts,
-<code>store_dt_on_disk.pl</code> and
-<code>classify_from_disk_stored_dt.pl</code> that shows how can do
-exactly that with the help of the <code>Storable</code> module.</p>
+wishing you could store the tree you just created in a disk
+file and that, subsequently, you could use the stored tree
+for classification work.  The <code>examples</code> directory contains
+two scripts, <code>store_dt_on_disk.pl</code> and
+<code>classify_from_disk_stored_dt.pl</code>, that show how you can do
+exactly that with the help of Perl's <code>Storable</code> module.</p>
 <p>Version 1.3 addresses the issue that arises when the header
 of a training datafile declares a certain possible value for
 a feature but that (feature,value) pair does NOT show up
@@ -319,20 +343,20 @@ sense in which the current module could be used.</strong></p>
 <p>
 </p>
 <hr />
-<h1><a name="what_happens_if_there_are_just_too_many_features_and_or_too_many_possible_values_for_the_features">WHAT HAPPENS IF THERE ARE JUST TOO MANY FEATURES AND/OR TOO MANY POSSIBLE VALUES FOR THE FEATURES</a></h1>
+<h1><a name="what_happens_if_the_number_of_features_and_or_values_is_large">WHAT HAPPENS IF THE NUMBER OF FEATURES AND/OR VALUES IS LARGE</a></h1>
 <p>If <code>n</code> is the number of features and <code>m</code> the largest
 number for the possible values for any of the features,
-then, in the worst case, the algorithm would want to
-construct <code>m**n</code> nodes.  In other words, the size of the
-decision tree grows exponentially as you increase either the
-number of features or the number of possible values for the
-features.  That is the bad news.  The <strong>good news</strong> is that
-you have two constructor parameters at your disposal for
-controlling the size of the decision tree: The parameter
-<code>max_depth_desired</code> controls the depth of the constructed
-tree from its root node, and the parameter
-<code>entropy_threshold</code> controls the granularity with which the
-entropy space will be sampled.  The smaller the
+then, <strong>in only the worst case</strong>, the algorithm would want to
+construct <code>m**n</code> nodes.  In other words, in the worst case,
+the size of the decision tree grows exponentially as you
+increase either the number of features or the number of
+possible values for the features.  That is the bad news.
+The <strong>good news</strong> is that you have two constructor parameters
+at your disposal for controlling the size of the decision
+tree: The parameter <code>max_depth_desired</code> controls the depth
+of the constructed tree from its root node, and the
+parameter <code>entropy_threshold</code> controls the granularity with
+which the entropy space will be sampled.  The smaller the
 <code>max_depth_desired</code> and the larger the
 <code>entropy_threshold</code>, the smaller the size of the decision
 tree.  The default value for <code>max_depth_desired</code> is the
@@ -345,10 +369,10 @@ classification work.  The scripts <code>store_dt_on_disk.pl</code> and
 <code>classify_from_disk_stored_dt.pl</code> in the <code>examples</code>
 directory show you how you can do that with the help of
 Perl's Storable module.</p>
-<p><strong>Also note that it is always a good idea to keep the debug1
-option set anytime you are experimenting with a new
-datafile</strong> --- especially if your training datafile is likely
-to create an inordinately large decision tree.</p>
+<p><strong>Also note that it is always a good idea to keep the
+<code>debug1</code> option set anytime you are experimenting with a
+new datafile</strong> --- especially if your training datafile is
+likely to create an inordinately large decision tree.</p>
 <p>
 </p>
 <hr />
@@ -383,15 +407,15 @@ your own training data:</p>
                                           training_datafile =&gt; $training_datafile,
                                          );</pre>
 <p>A call to <a href="#new"><code>new()</code></a> constructs a new instance of the
-Algorithm::DecisionTree class.  For this call to make sense,
-the training data in the training datafile must be according
-to a certain format that is shown below.  (Also see the file
-training.dat in the examples directory.)</p>
+<code>Algorithm::DecisionTree</code> class.  For this call to make
+sense, the training data in the training datafile must be
+according to a certain format that is shown below.  (Also
+see the file <code>training.dat</code> in the <code>examples</code> directory.)</p>
 </dd>
 <dt><strong><a name="get_training_data" class="item"><strong>get_training_data():</strong></a></strong></dt>
 
 <dd>
-<p>After you have constructed a new instance of the Algorithm::DecisionTree
+<p>After you have constructed a new instance of the <code>Algorithm::DecisionTree</code>
 class, you must now read in the training data that is contained in the
 file named above.  This you do by:</p>
 <pre>
@@ -441,10 +465,10 @@ call</p>
 a decision tree classifier.  This you do by</p>
 <pre>
     my $root_node = $dt-&gt;construct_decision_tree_classifier();</pre>
-<p>This call returns an instance of type Node.  The Node class is
-defined within the main package file, at its end.  So, don't 
-forget, that $root_node in the above example call will be
-instantiated to an instance of type Node.</p>
+<p>This call returns an instance of type <code>Node</code>.  The <code>Node</code>
+class is defined within the main package file, at its end.
+So, don't forget, that <code>$root_node</code> in the above example
+call will be instantiated to an instance of type <code>Node</code>.</p>
 </dd>
 <dt><strong><a name="display_decision_tree" class="item"><strong>$root_node<code>-&gt;</code>display_decision_tree(&quot; &quot;):</strong></a></strong></dt>
 
@@ -454,11 +478,11 @@ instantiated to an instance of type Node.</p>
 <p>This will display the decision tree in your terminal window
 by using a recursively determined offset for each node as
 the display routine descends down the tree.</p>
-<p>I have intentionally left the syntax fragment $root_node in
-the above call to remind the reader that
-<a href="#display_decision_tree"><code>display_decision_tree()</code></a> is NOT called on the instance of the
-DecisionTree we constructed earlier, but on the Node
-instance returned by the call to
+<p>I have intentionally left the syntax fragment <code>$root_node</code>
+in the above call to remind the reader that
+<a href="#display_decision_tree"><code>display_decision_tree()</code></a> is NOT called on the instance of
+the <code>DecisionTree</code> we constructed earlier, but on the
+<code>Node</code> instance returned by the call to
 <a href="#construct_decision_tree_classifier"><code>construct_decision_tree_classifier()</code></a>.</p>
 </dd>
 <dt><strong><a name="classify" class="item"><strong>classify($root_node, @test_sample):</strong></a></strong></dt>
@@ -471,15 +495,17 @@ instance returned by the call to
                           videoAddiction=&gt;heavy /;</pre>
 <pre>
     my $classification = $dt-&gt;classify($root_node, @test_sample);</pre>
-<p>where, again, $root_node is an instance of type Node returned
-by the call to <a href="#construct_decision_tree_classifier"><code>construct_decision_tree_classifier()</code></a>.  The variable
-$classification holds a reference to a hash whose keys are the
-class labels and whose values the associated probabilities.</p>
+<p>where, again, <code>$root_node</code> is an instance of type <code>Node</code>
+returned by the call to
+<a href="#construct_decision_tree_classifier"><code>construct_decision_tree_classifier()</code></a>.  The variable
+<code>$classification</code> holds a reference to a hash whose keys are
+the class labels and whose values the associated
+probabilities.</p>
 </dd>
 <dt><strong><a name="determine_data_condition" class="item"><strong>determine_data_condition():</strong></a></strong></dt>
 
 <dd>
-<p>This method, automatically invoked when debug1 option is set
+<p>This method, automatically invoked when <code>debug1</code> option is set
 in the call to the decision-tree constructor, displays
 useful information regarding your training data file.  This
 method also warns you if you are trying to construct a
@@ -539,7 +565,7 @@ generator, you need to ask it to read the parameter file:</p>
           exercising:  regularly=0.7
           fatIntake:   low=0.6
           videoAddiction:</pre>
-<p>See the parameter file param.txt in the example directory.
+<p>See the parameter file <code>param.txt</code> in the <code>examples</code> directory.
 Initially, it might be best to modify that file to suit your
 needs.</p>
 <p>IMPORTANT: You can use any names for the classes, can have
@@ -559,7 +585,7 @@ weights to multiple (or even all) of the values for a given
 feature --- it does not add to the educational value you
 derive from the resulting training data.</p>
 <p>NOTE: if you do NOT express a bias for a feature (as is the
-case with the feature 'videoAddiction' above), equal weight
+case with the feature <code>videoAddiction</code> above), equal weight
 is given to all its values.</p>
 </dd>
 <dt><strong><a name="gen_training_data" class="item"><strong>$training_data_gen<code>-&gt;</code>gen_training_data():</strong></a></strong></dt>
@@ -576,8 +602,9 @@ file:</p>
 <p>To write out the training data to a disk file:</p>
 <pre>
     $training_data_gen-&gt;write_training_data_to_file();</pre>
-<p>This call will also display the training data in your 
-terminal window if the $debug1 is on.</p>
+<p>This call will also display the training data in your
+terminal window if the <code>debug1</code> option is set in the
+training data generator constructor.</p>
 </dd>
 <dt><strong><a name="test_data_generator" class="item"><strong>test_data_generator():</strong></a></strong></dt>
 
@@ -623,7 +650,8 @@ data and the test data.</p>
 <pre>
     $test_data_gen-&gt;write_test_data_to_file();</pre>
 <p>This call will also display the test data in your terminal
-window if the $debug1 is on.</p>
+window if the <code>debug1</code> option is set in the test data
+generator constructor.</p>
 </dd>
 </dl>
 <p>
@@ -678,14 +706,14 @@ you fed into it.</p>
 </p>
 <hr />
 <h1><a name="examples">EXAMPLES</a></h1>
-<p>See the examples directory in the distribution for how to
+<p>See the <code>examples</code> directory in the distribution for how to
 generate the training data, how to induce a decision tree,
 and how to then classify new data using the decision tree.</p>
 <p>To become more familiar with the module, run the script</p>
 <pre>
     training_data_generator.pl</pre>
 <p>to generate a training datafile according to the information
-placed in the file param.txt and then run the script</p>
+placed in the file param.txt.  Then run the script</p>
 <pre>
     construct_dt_and_classify_one_sample.pl</pre>
 <p>to classify a new data sample that is in the script.  Next
@@ -695,7 +723,20 @@ generate a test dataset by calling</p>
 <p>This will deposit the test data in a file.  You can invoke the
 classifier on this file by an invocation like</p>
 <pre>
-    classify_test_data_in_a_file.pl   training.dat   testdata2.dat   out.txt</pre>
+    classify_test_data_in_a_file.pl   training.dat   testdata.dat   out.txt</pre>
+<p>This call will first construct a decision tree using the
+training data in the file <code>training.dat</code>.  It will then
+calculate the class label for each data vector in the file
+<code>testdata.dat</code>.  The estimated class labels will be written
+out to the file <code>out.txt</code>.</p>
+<p>The <code>examples</code> directory also contains the script
+<code>store_dt_on_disk.pl</code> that shows how you can use Perl's
+Storable module to store a decision tree in a disk file.
+The file <code>classify_from_disk_stored_dt.pl</code> in the same
+directory shows how you can classify new data vectors with
+the stored decision tree.  This is expected to be extremely
+useful for situations that involve tens of thousands or
+millions of decision nodes.</p>
 <p>
 </p>
 <hr />

@@ -32,20 +32,29 @@ In order to become familiar with the Algorithm::DecisionTree module:
          parameter file.
 
 
-  (3)    If your decision tree is going to be very large, you may
-         need to change the values of the following constructor 
-         parameters in the experiments in (2) above:
+  (3)    If you are using a large number of features or if the
+         number of possible values for the features is very
+         large, unless you take care, the tree you construct
+         could end up being much too large and much too slow
+         to construct.  To limit the size of the tree, you
+         may need to change the values of the following
+         constructor parameters in the previous step:
 
                     max_depth_desired
 
                     entropy_threshold
 
-         The first parameter, max_depth_desired, controls the
-         depth of the tree from the root node, and the second
-         parameter, entropy_threshold, controls the resolution
-         in the entropy space.  The smaller the value for the
-         first parameter and the larger the value for the second
-         parameter, the smaller the decision tree.
+         The first parameter, max_depth_desired, controls
+         the depth of the tree from the root node, and the
+         second parameter, entropy_threshold, controls the
+         resolution in the entropy space.  The smaller the
+         value for the first parameter and the larger the
+         value for the second parameter, the smaller the
+         decision tree.  The largest possible value for
+         max_depth_desired is the number of features.  Take
+         it down from there to make the tree smaller.  The
+         smallest possible value for entropy_threshold is 0.
+         Take it up from there to make the tree smaller.
 
 
   (4)    Now run the test data generator script by invoking 

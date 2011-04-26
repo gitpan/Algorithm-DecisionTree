@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Algorithm-DecisionTree
-version:            1.4
+version:            1.41
 abstract:           A pure-Perl implementation for decision-tree based classification of multidimensional data
 author:
     - Avinash Kak (kak@purdue.edu)
