@@ -3,7 +3,7 @@ In order to become familiar with the Algorithm::DecisionTree module:
 
   (1)    Run the 
 
-               training_data_generator.pl
+               generate_training_data.pl
 
          script to create your training data. First run the
          script as it is, and then make a copy of the
@@ -17,11 +17,6 @@ In order to become familiar with the Algorithm::DecisionTree module:
                 construct_dt_and_classify_one_sample.pl
 
          script as it is.  
-
-         HIGHLY RECOMMENDED:  Always turn on the debug1 option
-                              on in the call to the constructor
-                              when experimenting with a training
-                              datafile for the first time.
 
          Now modify the test sample in this script and see
          what classification results you get for the new
@@ -84,6 +79,28 @@ In order to become familiar with the Algorithm::DecisionTree module:
          The first is for where the training data is, the second for 
          where the test data is, and the last where the classification 
          results will be deposited.
+
+
+=======================================================================
+
+FOR USING A DECISION TREE CLASSIFIER INTERACTIVELY:
+
+Starting with Version 1.6 of the module, you can use the
+DecisionTree classifier in an interactive mode.  In this
+mode, after you have constructed the decision tree, the user
+is prompted for answers to the questions regarding the
+feature tests at the nodes of the tree.  Depending on the
+answer supplied by the user at a node, the classifier takes
+a path corresponding to the answer to descend down the tree
+to the next node, and so on.
+
+To get a feel for using a decision tree in this mode,
+examine the script
+
+    classify_by_asking_questions.pl
+
+Execute the script as it is and see what happens.
+
 
 
 =======================================================================

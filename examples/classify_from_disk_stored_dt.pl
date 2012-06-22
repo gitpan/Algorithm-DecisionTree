@@ -16,9 +16,6 @@ my $root_node = retrieve( 'root_node.db' );
 #    tree displayed in your terminal window:
 #$root_node->display_decision_tree("     ");         
 
-
-#my @test_sample = qw /p1=>A p2=>Y p3=>T p4=>T p5=>G p6=>P p7=>C p8=>T p9=>P p10=>S/;
-
 my @test_sample = qw /exercising=>never 
                       smoking=>heavy 
                       fatIntake=>heavy 

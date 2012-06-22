@@ -1,12 +1,12 @@
 package Algorithm::DecisionTree;
 
 #---------------------------------------------------------------------------
-# Copyright (c) 2011 Avinash Kak. All rights reserved.
+# Copyright (c) 2012 Avinash Kak. All rights reserved.
 # This program is free software.  You may modify and/or
 # distribute it under the same terms as Perl itself.
 # This copyright notice must remain attached to the file.
 #
-# Algorithm::DecisionTree is a pure Perl implementation for
+# Algorithm::DecisionTree is a Perl implementation for
 # constructing a decision tree from training examples of
 # multidimensional data and then using the tree to classify
 # such data subsequently.
@@ -17,7 +17,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '1.41';
+our $VERSION = '1.6';
 
 #############################   Constructors  #######################
 
@@ -81,17 +81,19 @@ sub new {
     bless {
         _training_datafile           =>   $args{training_datafile} 
                                         || croak("training_datafile required"),
-        _root_node                   =>    undef,
         _entropy_threshold           =>    $args{entropy_threshold} || 0.01,
         _max_depth_desired           =>    $args{max_depth_desired} || undef,
         _debug1                      =>    $args{debug1} || 0,
         _debug2                      =>    $args{debug2} || 0,
+        _root_node                   =>    undef,
+        _probability_cache           =>    {},
+        _entropy_cache               =>    {},
         _training_data_hash          =>    {},
         _features_and_values_hash    =>    {},
         _samples_class_label_hash    =>    {},
-        _feature_val_prob_hash       =>    {},
         _class_names                 =>    [],
         _class_priors                =>    [],
+        _feature_names               =>    [],
     }, $class;
 }
 
@@ -105,7 +107,6 @@ sub classify {
     croak "Error in the names you have used for features and/or values" 
                   if ! $self->check_names_used(@features_and_values);    
     my @class_names = @{$self->{_class_names}};
-    my $feature_test = $root_node->get_feature();
     my $classification = $self->recursive_descent_for_classification( 
                                       $root_node, @features_and_values );
     if ($self->{_debug1}) {
@@ -157,6 +158,68 @@ sub recursive_descent_for_classification {
     }
     return $answer;
 }    
+
+sub classify_by_asking_questions {
+    my $self = shift;
+    my $root_node = shift;
+    my $classification = 
+        $self->interactive_recursive_descent_for_classification($root_node);
+    return $classification;
+}
+
+sub interactive_recursive_descent_for_classification {
+    my $self = shift;
+    my $node = shift;
+    my @class_names = @{$self->{_class_names}};
+    my $feature_test_at_node = $node->get_feature();
+    my $value_for_feature;
+    my $feature_value_combo;
+    if ($feature_test_at_node) {
+        my @possible_values_for_feature = 
+            sort @{$self->{_features_and_values_hash}->{$feature_test_at_node}};
+        while (1) {
+            $value_for_feature = undef;
+            print "\nWhat is the value for the feature '$feature_test_at_node'?" .
+                  "\nEnter one of: @possible_values_for_feature   =>   ";
+            $value_for_feature = <STDIN>;
+            chomp $value_for_feature;
+            my $answer_found = 0;
+            foreach my  $value (@possible_values_for_feature) {
+                if ($value eq $value_for_feature) {
+                    $answer_found = 1;
+                    last;
+                }
+            }
+            if ($answer_found == 1) {
+                last;
+            } else {
+                print("\nYou entered illegal value. Let's try again\n");
+            }
+        }
+        $feature_value_combo = "$feature_test_at_node=>$value_for_feature";
+    }
+    my @children = @{$node->get_children()};
+    if (@children == 0) {
+        my %answer;
+        my @leaf_node_class_probabilities=@{$node->get_class_probabilities()};
+        foreach my $i (0..@class_names-1) {
+            $answer{$class_names[$i]} = $leaf_node_class_probabilities[$i];
+        }
+        return \%answer;
+    }
+    my $answer;
+    foreach my $child (@children) {
+        my @branch_features_and_values = 
+               @{$child->get_branch_features_and_values()};
+        my $last_feature_and_value_on_branch = pop @branch_features_and_values;
+        if ($last_feature_and_value_on_branch eq $feature_value_combo) {
+            $answer = 
+              $self->interactive_recursive_descent_for_classification($child);
+            last;
+        }
+    }
+    return $answer;
+}
 
 #################    Decision Tree Construction  ###################
 
@@ -294,8 +357,9 @@ sub number_of_nodes_created {
 
 sub class_entropy_on_priors {
     my $self = shift;
+    return $self->{_entropy_cache}->{'priors'} 
+        if exists $self->{_entropy_cache}->{"priors"};
     my @class_names = @{$self->{_class_names}};
-#    my @priors = map {$self->prior_probability_for_class($_)} @class_names;
     my $entropy;
     foreach my $class (@class_names) {
         my $prob = $self->prior_probability_for_class($class);
@@ -308,12 +372,16 @@ sub class_entropy_on_priors {
         }
         $entropy += -1.0 * $prob * $log_prob;
     }
+    $self->{_entropy_cache}->{'priors'} = $entropy;
     return $entropy;
 }
 
 sub class_entropy_for_a_given_sequence_of_features_values {
     my $self = shift;
     my @array_of_features_and_values = @_;
+    my $sequence = join ':', @array_of_features_and_values;
+    return $self->{_entropy_cache}->{$sequence}
+        if exists $self->{_entropy_cache}->{$sequence};
     my @class_names = @{$self->{_class_names}};
     my $entropy;
     foreach my $class (@class_names) {
@@ -331,56 +399,9 @@ sub class_entropy_for_a_given_sequence_of_features_values {
         }
         $entropy += -1.0 * $prob * $log_prob;
     }
+    $self->{_entropy_cache}->{$sequence} = $entropy;
     return $entropy;
 }
-
-sub class_entropy_for_a_given_feature {
-    my $self = shift;
-    my $feature = shift;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my @values = @{$features_and_values_hash{$feature}};
-    my $entropy;
-    foreach my $value (@values) {
-        if (!defined $entropy) {
-            $entropy = 
-                $self->class_entropy_for_a_given_feature_and_given_value(
-                                                         $feature,$value)
-                *
-                $self->probability_for_feature_value($feature,$value);
-            next;
-        }
-        $entropy += 
-            $self->class_entropy_for_a_given_feature_and_given_value(
-                                                        $feature,$value)
-            *
-            $self->probability_for_feature_value($feature,$value);
-    }
-    return $entropy;
-}
-
-sub class_entropy_for_a_given_feature_and_given_value {
-    my $self = shift;
-    my $feature = shift;
-    my $value = shift;
-    my @class_names = @{$self->{_class_names}};
-    my $entropy;
-    foreach my $class (@class_names) {
-        my $prob = 
-            $self->probability_for_a_class_given_feature_value($class,
-                                                         $feature,$value);
-        my $log_prob = (log($prob) / log(2)) 
-                    if ($prob >= 0.0001) && ($prob <= 0.999) ;
-        $log_prob = 0 if $prob < 0.0001;           # since X.log(X)->0 as X->0
-        $log_prob = 0 if $prob > 0.999;            # since log(1) = 0
-        if (!defined $entropy ) {
-            $entropy = -1.0 * $prob * $log_prob;
-            next;
-        }
-        $entropy += - ($prob * $log_prob);
-    }
-    return $entropy;
-}
-
 
 #################    Probability Calculators   ######################
 
@@ -388,8 +409,12 @@ sub class_entropy_for_a_given_feature_and_given_value {
 sub probability_for_a_class_given_sequence_of_features_and_values {
     my $self = shift;
     my $class_wanted = shift;
-    my @class_names = @{$self->{_class_names}};
     my @array_of_features_and_values = @_;
+    my $sequence = join ':', @array_of_features_and_values;
+    my $class_and_sequence = $class_wanted .  '::' . $sequence;
+    return $self->{_probability_cache}->{$class_and_sequence} 
+        if exists $self->{_probability_cache}->{$class_and_sequence}; 
+    my @class_names = @{$self->{_class_names}};
     my @array_of_class_probabilities = (0) x @class_names;
     foreach my $i (0..@class_names-1) {
         my $prob = 
@@ -425,8 +450,13 @@ sub probability_for_a_class_given_sequence_of_features_and_values {
         @array_of_class_probabilities = map {$_ / $sum_probability} 
                                             @array_of_class_probabilities;
     }
-    my $index = get_index_at_value( $class_wanted, \@class_names );
-    return $array_of_class_probabilities[$index];
+    foreach my $i (0..@{$self->{_class_names}}-1) {
+        my $this_class_and_sequence = 
+                   $self->{_class_names}->[$i] . '::' . $sequence;
+        $self->{_probability_cache}->{$this_class_and_sequence} = 
+                                   $array_of_class_probabilities[$i];
+    }
+    return $self->{_probability_cache}->{$class_and_sequence};
 }
 
 # arg order:  classname, array of feature=>value pairs
@@ -434,6 +464,10 @@ sub probability_for_sequence_of_features_and_values_given_class {
     my $self = shift;
     my $class = shift;
     my @array_of_features_and_values = @_;
+    my $sequence = join ':', @array_of_features_and_values;
+    my $sequence_with_class = $sequence . '::' . $class;
+    return $self->{_probability_cache}->{$sequence_with_class}
+        if exists $self->{_probability_cache}->{$sequence_with_class};
     my $probability;
     foreach my $feature_and_value (@array_of_features_and_values) {
         my ($feature, $value) = $feature_and_value =~/(.+)=>(.+)/;
@@ -446,12 +480,16 @@ sub probability_for_sequence_of_features_and_values_given_class {
                                        $feature, $value, $class);
         }
     }
+    $self->{_probability_cache}->{$sequence_with_class} = $probability;
     return $probability;
 }
 
 sub probability_of_a_sequence_of_features_and_values {
     my $self = shift;
     my @array_of_features_and_values = @_;
+    my $sequence = join ':', @array_of_features_and_values;
+    return $self->{_probability_cache}->{$sequence}
+        if exists $self->{_probability_cache}->{$sequence};
     my $probability;
     foreach my $feature_and_value (@array_of_features_and_values) {    
         my ($feature, $value) = $feature_and_value =~/(.+)=>(.+)/;
@@ -464,6 +502,9 @@ sub probability_of_a_sequence_of_features_and_values {
                   $self->probability_for_feature_value($feature, $value);
         }
     }
+
+    $self->{_probability_cache}->{$sequence} = $probability;
+
     return $probability;
 }
 
@@ -485,16 +526,15 @@ sub probability_for_feature_value {
     my $self = shift;
     my $feature = shift;
     my $value = shift;
-    return $self->{_feature_val_prob_hash}->{"$feature=>$value"} 
-      if exists($self->{_feature_val_prob_hash}->{"$feature=>$value"});
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my %training_data_hash = %{$self->{_training_data_hash}};
-    my @values_for_feature = @{$features_and_values_hash{$feature}};
+    my $feature_and_value = "$feature=>$value";
+    return $self->{_probability_cache}->{$feature_and_value}
+        if exists $self->{_probability_cache}->{$feature_and_value};
+    my @values_for_feature = @{$self->{_features_and_values_hash}->{$feature}};
     @values_for_feature = map {"$feature=>" . $_} @values_for_feature;
     my @value_counts = (0) x @values_for_feature;
     foreach my $sample (sort {sample_index($a) <=> sample_index($b)}
-                                              keys %training_data_hash) {
-        my @features_and_values = @{$training_data_hash{$sample}};
+                                    keys %{$self->{_training_data_hash}}) {
+        my @features_and_values = @{$self->{_training_data_hash}->{$sample}};
         foreach my $i (0..@values_for_feature-1) {
             foreach my $current_value (@features_and_values) {
                 $value_counts[$i]++ 
@@ -502,36 +542,37 @@ sub probability_for_feature_value {
             }
         }
     }
-    my $total_count = 0;
-    my $answer;
-    foreach my $i (0..@values_for_feature-1) {    
-        $answer = $value_counts[$i]
-              if "$feature=>$value" eq $values_for_feature[$i];
-        $total_count += $value_counts[$i];
+    my $total_count = keys %{$self->{_training_data_hash}};
+    foreach my $i (0..@values_for_feature-1) {
+        $self->{_probability_cache}->{$values_for_feature[$i]} = 
+                           $value_counts[$i] / (1.0 * $total_count);
     }
-    return 0 if !defined $answer;
-    return $answer / (1.0 * $total_count);
+    if (exists $self->{_probability_cache}->{$feature_and_value}) {
+            return $self->{_probability_cache}->{$feature_and_value};
+    } else {
+        return 0;
+    }
 }
-    
+
 # argument order:  feature_name, feature_value, class_name
 sub probability_for_feature_value_given_class {
     my $self = shift;
     my $feature = shift;
     my $feature_value = shift;
-    my $class = shift;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my %samples_class_label_hash = %{$self->{_samples_class_label_hash}};
-    my %training_data_hash = %{$self->{_training_data_hash}};
+    my $class_name = shift;
+    my $feature_value_class = "$feature=>$feature_value" . '::' . $class_name;
+    return $self->{_probability_cache}->{$feature_value_class}
+        if exists $self->{_probability_cache}->{$feature_value_class};
     my @samples_for_class;
-    foreach my $sample_name (keys %samples_class_label_hash) {
+    foreach my $sample_name (keys %{$self->{_samples_class_label_hash}}) {
         push @samples_for_class, $sample_name 
-            if $samples_class_label_hash{$sample_name} eq $class;
+          if $self->{_samples_class_label_hash}->{$sample_name} eq $class_name;
     }
-    my @values_for_feature = @{$features_and_values_hash{$feature}};
+    my @values_for_feature = @{$self->{_features_and_values_hash}->{$feature}};
     @values_for_feature = map {"$feature=>" . $_} @values_for_feature;
     my @value_counts = (0) x @values_for_feature;
     foreach my $sample (@samples_for_class) {
-        my @features_and_values = @{$training_data_hash{$sample}};
+        my @features_and_values = @{$self->{_training_data_hash}->{$sample}};
         foreach my $i (0..@values_for_feature-1) {
             foreach my $current_value (@features_and_values) {
                 $value_counts[$i]++ 
@@ -540,25 +581,39 @@ sub probability_for_feature_value_given_class {
         }
     }
     my $total_count = 0;
-    my $answer;
     foreach my $i (0..@values_for_feature-1) {    
-        $answer = $value_counts[$i] 
-            if "$feature=>$feature_value" eq $values_for_feature[$i];
         $total_count += $value_counts[$i];
     }
-    return 0 if !defined $answer;
-    return $answer / (1.0 * $total_count);
+    foreach my $i (0..@values_for_feature-1) {
+        my $feature_and_value_for_class = 
+                         $values_for_feature[$i] . '::' . $class_name;
+        $self->{_probability_cache}->{$feature_and_value_for_class} = 
+                                $value_counts[$i] / (1.0 * $total_count);
+    }
+    if (exists $self->{_probability_cache}->{$feature_value_class}) {
+        return $self->{_probability_cache}->{$feature_value_class};
+    else:
+        return 0
+    }
 }
 
 sub prior_probability_for_class {
     my $self = shift;
     my $class = shift;
-    my %samples_class_label_hash = %{$self->{_samples_class_label_hash}};
-    my $total_num_of_samples = keys %samples_class_label_hash;
-    my $count = 0;
-    my @values = values %samples_class_label_hash;
-    my @trues = grep {$_ eq $class} @values;
-    return (1.0 * @trues) / $total_num_of_samples; 
+    my $class_name_in_cache = "prior" . '::' . $class;
+    return $self->{_probability_cache}->{$class_name_in_cache}
+        if exists $self->{_probability_cache}->{$class_name_in_cache};
+    my $total_num_of_samples = keys %{$self->{_samples_class_label_hash}};
+    my @values = values %{$self->{_samples_class_label_hash}};
+
+    foreach my $class_name (@{$self->{_class_names}}) {
+        my @trues = grep {$_ eq $class_name} @values;
+        my $prior_for_this_class = (1.0 * @trues) / $total_num_of_samples; 
+        my $this_class_name_in_cache = "prior" . '::' . $class_name;
+        $self->{_probability_cache}->{$this_class_name_in_cache} = 
+                                                  $prior_for_this_class;
+    }
+    return $self->{_probability_cache}->{$class_name_in_cache};
 }
 
 ###################  Data Condition Calculator  ###################
@@ -666,11 +721,10 @@ sub get_training_data {
     foreach my $feature (@feature_names) {
         my @values_for_feature = @{$features_and_values_hash{$feature}};
         foreach my $value (@values_for_feature) {
-            $feature_value_probability_hash{"$feature=>$value"} =
+            $self->{_probability_hash}->{"$feature=>$value"} =
                   $self->probability_for_feature_value($feature,$value); 
         }
     }
-    $self->{_feature_val_prob_hash} = \%feature_value_probability_hash;
 }    
 
 sub show_training_data {
@@ -1362,10 +1416,10 @@ sub display_decision_tree {
 =pod
 =head1 NAME
 
-Algorithm::DecisionTree - A pure-Perl implementation for
+Algorithm::DecisionTree - A Perl implementation for
 constructing a decision tree from multidimensional training
 data and for using the decision tree thus induced for
-classifying data.
+classifying new data.
 
 =head1 SYNOPSIS
 
@@ -1393,9 +1447,6 @@ classifying data.
   # names of the different possible values for the features.  The rest of the
   # training datafile is expected to contain the training samples in the form of
   # a multi-column table.
-
-  # HIGHLY RECOMMENDED: Always use the "debug1" option in the constructor call
-  # above when working with a training dataset for the first time.
 
   # If your training file specifies a large number of features or a large
   # number of values for the features, the above constructor call could result
@@ -1468,6 +1519,15 @@ classifying data.
   # parameter file.
 
 =head1 CHANGES
+
+Version 1.6 uses probability caching much more extensively
+compared to the previous versions.  This should result in
+faster construction of large decision trees.  Another new
+feature in Version 1.6 is the use of a decision tree for
+interactive classification. In this mode, after you have
+constructed a decision tree from the training data, the user
+is prompted for answers to the questions pertaining to the
+feature tests at the nodes of the tree.
 
 Some of the key elements of the documentation were cleaned
 up and made more readable in Version 1.41.  The
@@ -1590,7 +1650,7 @@ mean that you simply have not supplied sufficient training
 data to the decision tree classifier.  For a tutorial
 introduction to how a decision tree is constructed and used,
 visit
-L<http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf>
+L<https://engineering.purdue.edu/kak/DecisionTreeClassifiers.pdf>
 
 
 =head1 WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE
@@ -1729,7 +1789,7 @@ example, using color as an object feature in a computer
 vision application.)  The decision trees for applications in
 which the feature values are primarily numerical in nature
 are constructed differently, as explained in the tutorial at
-L<http://cobweb.ecn.purdue.edu/~kak/DecisionTreeClassifiers.pdf>
+L<https://engineering.purdue.edu/kak/DecisionTreeClassifiers.pdf>
 
 
 =head1 METHODS
@@ -1761,7 +1821,7 @@ file named above.  This you do by:
 
     $dt->get_training_data(); 
 
-IMPORTANT: The training data file must in a format that
+IMPORTANT: The training datafile must be in a format that
 makes sense to the decision tree constructor.  The
 information in this file should look like
 
@@ -1856,6 +1916,22 @@ method also warns you if you are trying to construct a
 decision tree that may simply be much too large.  
 
     $dt->determine_data_condition(); 
+
+=item B<classify_by_asking_questions($root_node):>
+
+This method allows you to use the decision tree constructed
+in an interactive mode.  In this mode, you will be prompted
+for answers to the questions pertaining to the feature tests
+at the nodes of the tree.  The syntax for invoking this
+method is:
+
+    my $classification = $dt->classify_by_asking_questions($root_node);
+
+where C<$dt> is an instance of the
+C<Algorithm::DecisionTree> class returned by a call to
+C<new()> and C<$root_node> the root node of the decision
+tree returned by a call to
+C<construct_decision_tree_classifier()>.
 
 =item B<training_data_generator():>
 
@@ -2072,10 +2148,11 @@ placed in the file param.txt.  Then run the script
 to classify a new data sample that is in the script.  Next
 generate a test dataset by calling
 
-    generate_test_data.pl*
+    generate_test_data.pl
 
-This will deposit the test data in a file.  You can invoke the
-classifier on this file by an invocation like
+This will deposit multiple samples of the test data in a
+file.  You can invoke the classifier on this file by an
+invocation like
 
     classify_test_data_in_a_file.pl   training.dat   testdata.dat   out.txt
 
@@ -2093,6 +2170,16 @@ directory shows how you can classify new data vectors with
 the stored decision tree.  This is expected to be extremely
 useful for situations that involve tens of thousands or
 millions of decision nodes.
+
+If you are interested in using a decision tree interactively,
+the following script in the C<examples> directory:
+
+    classify_by_asking_questions.pl
+
+shows how you can do that.  You still have to first construct
+a decision tree from the training data.  Subsequently, the 
+tree classifier will prompt you for answers to the questions
+pertaining to the feature tests at the nodes.
 
 =head1 EXPORT
 
@@ -2132,7 +2219,7 @@ subject line to get past my spam filter.
 This library is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
- Copyright 2011 Avinash Kak
+ Copyright 2012 Avinash Kak
 
 =cut
 

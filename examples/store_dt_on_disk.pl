@@ -11,8 +11,8 @@ my $training_datafile = "training.dat";
 
 my $dt = Algorithm::DecisionTree->new( 
                               training_datafile => $training_datafile,
-                              entropy_threshold => 0.1,
-                              debug1 => 1                          
+#                              entropy_threshold => 0.1,
+#                              debug1 => 1                          
     );
 
 $dt->get_training_data();
