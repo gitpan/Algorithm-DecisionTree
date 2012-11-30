@@ -6,10 +6,10 @@ package Algorithm::DecisionTree;
 # distribute it under the same terms as Perl itself.
 # This copyright notice must remain attached to the file.
 #
-# Algorithm::DecisionTree is a Perl implementation for
-# constructing a decision tree from training examples of
-# multidimensional data and then using the tree to classify
-# such data subsequently.
+# Algorithm::DecisionTree is a Perl module for constructing
+# a decision tree from training examples of multidimensional
+# data and then using the tree thus constructed to classify
+# new data.
 # ---------------------------------------------------------------------------
 
 use 5.10.0;
@@ -17,7 +17,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '1.6';
+our $VERSION = '1.7';
 
 #############################   Constructors  #######################
 
@@ -665,20 +665,25 @@ sub get_training_data {
     my $recording_training_data = 0;
     my @table_header;
     my %column_label_hash;
+    my @class_names;
     open INPUT, $training_data_file
                 || "unable to open training data file: $!";
     my @all_data;
     my $all_data_as_string;
     my %training_data_records;
-
     while (<INPUT>) {
         chomp;
-        next if /^[\s=#]*$/;
+        next if /^[\s=]*$/;
+        next if /^#.*$/;
         if ( (/^class/i) && !$recording_training_data 
                          && !$recording_features_flag ) {
             $_ =~ /^\s*class names:\s*([ \S]+)\s*/i;
-            my @class_names = split /\s+/, $1;
-            $self->{_class_names} = \@class_names;
+            @class_names = split /\s+/, $1;
+            my @bad_names = grep /\W+/, @class_names;            
+            die "Your class names near the top of the training file do not look clean.  Class names are only allowed to have alphanumeric characters (including the underscore).  They must not be separated by punctuation marks such as commas. The class names must be separated by white space only" 
+                unless @bad_names == 0;
+            die "You have not supplied any class names in your training file"
+                if @class_names == 0;
             next;
         } elsif (/^feature names and their values/i) {
             $recording_features_flag = 1;
@@ -705,14 +710,45 @@ sub get_training_data {
                 next;
             }
             my @record = split /\s+/;
+            my $class_name_in_record = $record[1];
+            die "The class name in sample record $record[0] does not match the class names declared at the top of your training file"
+                unless contained_in($class_name_in_record, @class_names);
             $samples_class_label_hash{$record[0]} = $record[1];
             $training_data_hash{$record[0]} = [];
             foreach my $i (2..@record-1) {
+                my $feature_name_for_this_col = $column_label_hash{$i};
+                my @values_for_this_feature = 
+                    @{$features_and_values_hash{$feature_name_for_this_col}};
+                die "For sample record $record[0], one of the feature values is illegal"
+                    unless contained_in($record[$i], @values_for_this_feature);
                 push @{$training_data_hash{$record[0]}}, 
                                 "$column_label_hash{$i}" . "=>" . $record[$i];
             }
         }
     }
+    my @class_labels_in_sample_records = values(%samples_class_label_hash);
+    my @empty_classes;
+    foreach my $classname (@class_names) {
+        push @empty_classes, $classname
+            unless contained_in($classname, @class_labels_in_sample_records) 
+    }
+    if (@empty_classes) {
+        my $num_empty_classes = @empty_classes;       
+        print "\nDid you know you have $num_empty_classes class(es).  The DecisionTree module can ignore these classes for you.\n";
+        print "EMPTY CLASSES: @empty_classes\n";
+        print "Do you wish to continue? Enter 'y' if yes:  ";
+        my $answer = <STDIN>;
+        $answer =~ s/^\s*(\w+)\s*$/\L$1/;
+        die "You chose to not continue with empty classes" 
+            unless $answer eq 'y';
+        my @new_class_names;
+        foreach my $classname (@class_names) {
+            push @new_class_names, $classname
+                unless contained_in($classname, @empty_classes) 
+        }
+        @class_names = @new_class_names;
+    }
+    $self->{_class_names} = \@class_names;
     $self->{_feature_names} = \@feature_names;
     $self->{_features_and_values_hash} = \%features_and_values_hash;
     $self->{_samples_class_label_hash} = \%samples_class_label_hash;
@@ -850,8 +886,6 @@ sub gen_training_data {
     my %features_and_values_hash = %{$self->{_features_and_values_hash}};
     my %bias_hash  = %{$self->{_bias_hash}};
     my $how_many_training_samples = $self->{_number_of_training_samples};
-    open FILEHANDLE, ">$self->{_output_datafile}" 
-                        or die "Unable to open file: $!";
     my %class_priors_to_unit_interval_map;
     my $accumulated_interval = 0;
     foreach my $i (0..@class_names-1) {
@@ -948,30 +982,28 @@ sub write_training_data_to_file {
     my %training_sample_records = %{$self->{_training_sample_records}};
     print "\n\nDISPLAYING TRAINING RECORDS:\n\n" if $self->{_debug1};
     open FILEHANDLE, ">$output_file";
-    print FILEHANDLE "Class names: @class_names\n\n" 
-                                if $self->{_write_to_file};
-    print FILEHANDLE "Feature names and their values:\n" 
-                                if $self->{_write_to_file};
+    print FILEHANDLE "Class names: @class_names\n\n"; 
+    print FILEHANDLE "Feature names and their values:\n"; 
     my @features = keys %features_and_values_hash;
     die "You probably forgot to call gen_training_data() before " .
             "calling write_training_data_to_file()()" if @features == 0;
     my %feature_name_indices;
     foreach my $i (0..@features-1) {
         $feature_name_indices{$features[$i]} = $i + 2;
-        print FILEHANDLE "    $features[$i] => @{$features_and_values_hash{$features[$i]}}\n" if $self->{_write_to_file};
+        print FILEHANDLE "    $features[$i] => @{$features_and_values_hash{$features[$i]}}\n";
     }
-    print FILEHANDLE "\n\nTraining Data:\n\n" if $self->{_write_to_file};
+    print FILEHANDLE "\n\nTraining Data:\n\n";
     my $num_of_columns = @features + 2;
     my $field_width = '@' . "<" x $self->find_longest_feature_or_value();
     my $fmt = "$field_width  " x $num_of_columns;
     formline( $fmt, "sample", "class", @features );
     use English;
     print $ACCUMULATOR, "\n" if $self->{_debug1};
-    print FILEHANDLE "\n\n" if $self->{_write_to_file};
-    print FILEHANDLE $ACCUMULATOR, "\n" if $self->{_write_to_file};
+    print FILEHANDLE "\n\n";
+    print FILEHANDLE $ACCUMULATOR, "\n";
     $ACCUMULATOR = "";
     print "=" x length($fmt) . "\n\n" if $self->{_debug1};
-    print FILEHANDLE "=" x length($fmt) . "\n\n" if $self->{_write_to_file};
+    print FILEHANDLE "=" x length($fmt) . "\n\n";
 
     foreach my $kee (sort {sample_index($a) <=> sample_index($b)} 
                                      keys %training_sample_records) {
@@ -990,7 +1022,7 @@ sub write_training_data_to_file {
         }
         formline( $fmt, @args_for_formline );
         print $ACCUMULATOR, "\n" if $self->{_debug1};
-        print FILEHANDLE $ACCUMULATOR, "\n" if $self->{_write_to_file};
+        print FILEHANDLE $ACCUMULATOR, "\n";
         $ACCUMULATOR = "";
     }
     close FILEHANDLE;
@@ -1135,7 +1167,7 @@ sub write_test_data_to_file {
         }
         formline( $fmt, @args_for_formline );
         print $ACCUMULATOR, "\n" if $self->{_debug1};
-        print FILEHANDLE $ACCUMULATOR, "\n" if $self->{_write_to_file};
+        print FILEHANDLE $ACCUMULATOR, "\n";
         $ACCUMULATOR = "";
     }
     close FILEHANDLE;
@@ -1416,10 +1448,10 @@ sub display_decision_tree {
 =pod
 =head1 NAME
 
-Algorithm::DecisionTree - A Perl implementation for
-constructing a decision tree from multidimensional training
-data and for using the decision tree thus induced for
-classifying new data.
+Algorithm::DecisionTree - A Perl module for constructing a
+decision tree from multidimensional training data and for
+using the decision tree thus constructed for classifying new
+data.
 
 =head1 SYNOPSIS
 
@@ -1520,6 +1552,18 @@ classifying new data.
 
 =head1 CHANGES
 
+Version 1.7 includes safety checks on the consistency of the
+data you place in your training datafile. When a training
+file contains thousands of samples, it is difficult to
+manually check that you used the same class names in your
+sample records that you declared at top of your training
+file or that the values you have for your features are legal
+vis-a-vis the earlier declarations of the values in the
+training file.  Another safety feature incorporated in this
+version is the non-consideration of classes that are
+declared at the top of the training file but that have no
+sample records in the file.
+
 Version 1.6 uses probability caching much more extensively
 compared to the previous versions.  This should result in
 faster construction of large decision trees.  Another new
@@ -1529,9 +1573,9 @@ constructed a decision tree from the training data, the user
 is prompted for answers to the questions pertaining to the
 feature tests at the nodes of the tree.
 
-Some of the key elements of the documentation were cleaned
-up and made more readable in Version 1.41.  The
-implementation code remains unchanged from Version 1.4.
+Some key elements of the documentation were cleaned up and
+made more readable in Version 1.41.  The implementation code
+remains unchanged from Version 1.4.
 
 Version 1.4 should make things faster (and easier) for folks
 who want to use this module with training data that creates

@@ -1,13 +1,12 @@
-Algorithm::DecisionTree - A pure-Perl implementation for
-constructing a decision tree from multidimensional training
-data and for using the decision tree thus induced for
-classifying data.  The decision tree is induced from the
-training data supplied through a diskfile.  As the
-documentation explains, the training data must be in a
-format that shows the names of the classes, the names of the
-features, their possible values, etc., at the head of the
-training data file.  Please see training.dat in the examples
-directory.
+Algorithm::DecisionTree - A Perl module for constructing a
+decision tree from multidimensional training data and for
+using the decision tree thus induced for classifying data.
+The decision tree is induced from the training data supplied
+through a diskfile.  As the documentation explains, the
+training data must be in a format that shows the names of
+the classes, the names of the features, their possible
+values, etc., at the head of the training data file.  Please
+see training.dat in the examples directory.
 
 You can generate your own training data by specifying the
 class names, the feature names, the names to be used for

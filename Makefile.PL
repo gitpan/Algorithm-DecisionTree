@@ -13,7 +13,7 @@ WriteMakefile(
     NAME         => 'Algorithm::DecisionTree',
     VERSION_FROM => 'lib/Algorithm/DecisionTree.pm',
     AUTHOR       => 'Avinash Kak (kak@purdue.edu)',
-    ABSTRACT     => 'A pure-Perl implementation for decision-tree based classification of multidimensional data',
+    ABSTRACT     => 'A Perl module for decision-tree based classification of multidimensional data',
     clean        => {FILES => join(" ",
                                    map { "$_ */$_ */*/$_" }
                                    qw( *% *.html *.b[ac]k *.old *.orig ) )

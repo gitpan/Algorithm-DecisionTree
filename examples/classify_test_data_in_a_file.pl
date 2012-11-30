@@ -1,5 +1,7 @@
 #!/usr/bin/perl -w
 
+# classify_test_data_in_a_file.pl
+
 #use lib '../blib/lib', '../blib/arch';
 
 use strict;
@@ -19,21 +21,23 @@ my ($training_datafile, $test_datafile, $outputfile) = @ARGV;
 
 my $dt = Algorithm::DecisionTree->new( 
                               training_datafile => $training_datafile,
+                              entropy_threshold => 0.1,
+                              max_depth_desired => 3,
+#                             debug1 => 1,                          
+#                             debug2 => 1,
     );
 
 $dt->get_training_data();
 
-# UNCOMMENT THE FOLLOWING LINE if you would like to see the training
-# data that was read from the disk file:
-
+### UNCOMMENT THE NEXT STATEMENT if you would like to see
+### the training data that was read from the disk file:
 #$dt->show_training_data();
 
 my $root_node = $dt->construct_decision_tree_classifier();
 
 
-# UNCOMMENT THE FOLLOWING LINE if you would like to see the decision
-# tree displayed in your terminal window:
-
+### UNCOMMENT THE NEXT STATEMENT if you would like to see
+### the decision tree displayed in your terminal window:
 #$root_node->display_decision_tree("   ");
 
 # NOW YOU ARE READY TO CLASSIFY TEST DATA IN A FILE:
