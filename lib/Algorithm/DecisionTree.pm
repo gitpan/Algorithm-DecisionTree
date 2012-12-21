@@ -17,7 +17,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '1.7';
+our $VERSION = '1.71';
 
 #############################   Constructors  #######################
 
@@ -584,6 +584,9 @@ sub probability_for_feature_value_given_class {
     foreach my $i (0..@values_for_feature-1) {    
         $total_count += $value_counts[$i];
     }
+    die "\n\nSomething is wrong with your training file.  It contains no training samples for Class $class_name and Feature $feature\n" if $total_count == 0;
+    # We normalize by $total_count because the probabilities are conditioned on
+    # a given class
     foreach my $i (0..@values_for_feature-1) {
         my $feature_and_value_for_class = 
                          $values_for_feature[$i] . '::' . $class_name;
@@ -636,11 +639,18 @@ sub determine_data_condition {
     }
     print "Largest number of feature values is: $max_num_values\n";
     my $estimated_number_of_nodes = $max_num_values ** @features;
-    print "\nWORST CASE SCENARIO: The decision tree COULD have as many as   \n   $estimated_number_of_nodes nodes. The exact number of nodes created depends\n   critically on the entropy_threshold used for node expansion.\n   (The default for this threshold is 0.01.)\n";
+    print "\nWORST CASE SCENARIO: The decision tree COULD have as many as   \n   $estimated_number_of_nodes nodes. The exact number of nodes created depends\n   critically on the entropy_threshold used for node expansion (the default\n   value for this threshold is 0.01) and on the value set for\n   max_depth_desired for the depth of the tree\n";
     if ($estimated_number_of_nodes > 10000) {
-        print "\nTHIS IS WAY TOO MANY NODES. Consider using a relatively large\n   value for entropy_threshold to reduce the number of nodes created.\n";
-        print "\nDo you wish to continue? Enter 'y' if yes:  ";
-        die unless <STDIN> =~ /y(es)?/i;
+        print "\nTHIS IS WAY TOO MANY NODES. Consider using a relatively large value for\n   entropy_threshold and/or a small value for for max_depth_desired\n   to reduce the number of nodes created.\n";
+        print "\nDo you wish to continue? Enter 'y' if yes and 'n' if no:  ";
+        my $answer = <STDIN>;
+        chomp $answer;
+        while ( ($answer !~ /y(es)?/i) && ($answer !~ /n(o)?/i) ) {
+            print "\nAnswer not recognized.  Let's try again. Enter 'y' or 'n': ";
+            $answer = <STDIN>;
+            chomp $answer;            
+        }
+        die unless $answer =~ /y(es)?/i;
     }
     print "\nI will start by showing you the probabilities of feature-value pairs in your data:\n\n";
     foreach my $feature (@features) {
@@ -679,6 +689,7 @@ sub get_training_data {
                          && !$recording_features_flag ) {
             $_ =~ /^\s*class names:\s*([ \S]+)\s*/i;
             @class_names = split /\s+/, $1;
+            @class_names = grep {defined($_) && length($_) > 0} @class_names;
             my @bad_names = grep /\W+/, @class_names;            
             die "Your class names near the top of the training file do not look clean.  Class names are only allowed to have alphanumeric characters (including the underscore).  They must not be separated by punctuation marks such as commas. The class names must be separated by white space only" 
                 unless @bad_names == 0;
@@ -696,20 +707,23 @@ sub get_training_data {
             my ($feature_name, $value_string) = $_ =~ /^\s*(\S+)\s*=>\s*(.+)/i;
             $features_and_values_hash{$feature_name} = [];
             my @values = split /\s+/, $value_string;
-            @values = grep $_, @values;
+            @values = grep {defined($_) && length($_) > 0} @values;
             push @{$features_and_values_hash{$feature_name}}, @values;
             push @feature_names, $feature_name;
         } elsif ($recording_training_data) {
             if (@table_header == 0) {
                 @table_header = split;
+                @table_header = grep {defined($_) && length($_) > 0} @table_header;
                 foreach my $i (2..@table_header-1) {
                     $column_label_hash{$i} = $table_header[$i];
                 }
-                my @temp = keys %column_label_hash;
-                # print "keys of column_label_hash: @temp \n";
                 next;
             }
             my @record = split /\s+/;
+            @record =  grep {defined($_) && length($_) > 0} @record;
+            my $num_of_feature_vals = scalar(@record) - 2;
+            my $num_of_features = @feature_names;
+            die "Your training datafile is defective.  The number of values, $num_of_feature_vals, declared for $record[0] does not match the number of features declared at the beginning of the datafile. You previously declared  $num_of_features features." unless @record == $num_of_features + 2;
             my $class_name_in_record = $record[1];
             die "The class name in sample record $record[0] does not match the class names declared at the top of your training file"
                 unless contained_in($class_name_in_record, @class_names);
@@ -719,7 +733,7 @@ sub get_training_data {
                 my $feature_name_for_this_col = $column_label_hash{$i};
                 my @values_for_this_feature = 
                     @{$features_and_values_hash{$feature_name_for_this_col}};
-                die "For sample record $record[0], one of the feature values is illegal"
+                die "For sample record $record[0], one of the feature values, $record[$i], is illegal. Legal values for this feature, $column_label_hash{$i}, are: @values_for_this_feature"
                     unless contained_in($record[$i], @values_for_this_feature);
                 push @{$training_data_hash{$record[0]}}, 
                                 "$column_label_hash{$i}" . "=>" . $record[$i];
@@ -815,18 +829,18 @@ sub read_parameter_file {
     
     my ($class_names, $class_priors, $rest_param) = 
               $param_string =~ /^\s*class names:(.*?)\s*class priors:(.*?)(feature: .*)/;
-    my @class_names = grep $_, split /\s+/, $1;
+    my @class_names = grep {defined($_) && length($_) > 0} split /\s+/, $1;
     push @{$self->{_class_names}}, @class_names;
-    my @class_priors = grep $_, split /\s+/, $2;
+    my @class_priors =   grep {defined($_) && length($_) > 0} split /\s+/, $2;
     push @{$self->{_class_priors}}, @class_priors;    
     my ($feature_string, $bias_string) = $rest_param =~ /(feature:.*?) (bias:.*)/;
     my %features_and_values_hash;
     my @features = split /(feature[:])/, $feature_string;
-    @features = grep $_, @features;
+    @features = grep {defined($_) && length($_) > 0} @features;
     foreach my $item (@features) {
         next if $item =~ /feature/;
         my @splits = split / /, $item;
-        @splits = grep $_, @splits;
+        @splits = grep {defined($_) && length($_) > 0} @splits;
         foreach my $i (0..@splits-1) {
             if ($i == 0) {
                 $features_and_values_hash{$splits[0]} = [];
@@ -839,11 +853,11 @@ sub read_parameter_file {
     $self->{_features_and_values_hash} = \%features_and_values_hash;
     my %bias_hash = %{$self->{_bias_hash}};
     my @biases = split /(bias[:]\s*class[:])/, $bias_string;
-    @biases = grep $_, @biases;
+    @biases = grep {defined($_) && length($_) > 0} @biases;
     foreach my $item (@biases) {
         next if $item =~ /bias/;
         my @splits = split /\s+/, $item;
-        @splits = grep $_, @splits;
+        @splits = grep {defined($_) && length($_) > 0} @splits;
         my $feature_name;
         foreach my $i (0..@splits-1) {
             if ($i == 0) {
@@ -927,7 +941,7 @@ sub gen_training_data {
             my $chosen_bias = $splits[1];
             my $remaining_bias = 1 - $chosen_bias;
             my $remaining_portion_bias = $remaining_bias / (@values -1);
-            @splits = grep $_, @splits;
+            @splits = grep {defined($_) && length($_) > 0} @splits;
             my $accumulated = 0;
             foreach my $i (0..@values-1) {
                 if ($values[$i] eq $chosen_for_bias_value) {
@@ -1085,7 +1099,7 @@ sub gen_test_data {
             my $chosen_bias = $splits[1];
             my $remaining_bias = 1 - $chosen_bias;
             my $remaining_portion_bias = $remaining_bias / (@values -1);
-            @splits = grep $_, @splits;
+            @splits = grep {defined($_) && length($_) > 0} @splits;
             my $accumulated = 0;
             foreach my $i (0..@values-1) {
                 if ($values[$i] eq $chosen_for_bias_value) {
@@ -1217,6 +1231,12 @@ sub get_index_at_value {
     }
 }
 
+# Every sample in the training data are expected to start with a symbolic
+# sample name followed by an underscore and then followed by an integer
+# that designates the integer id of the sample.  For example, the first
+# sample in the training data may be labeled 'mysample_0' and the second
+# sample 'mysample_1', and so on.  The following function returns the
+# integer part of a sample name.
 sub sample_index {
     my $arg = shift;
     $arg =~ /_(.+)$/;
@@ -1552,6 +1572,15 @@ data.
 
 =head1 CHANGES
 
+Version 1.71 fixes a bug in the code that was triggered by 0
+being declared as one of the features values in the training
+datafile. Version 1.71 also include an additional safety
+feature that is useful for training datafiles that contain a
+very large number of features.  The new version makes sure
+that the number of values you declare for each sample record
+matches the number of features declared at the beginning of
+the training datafile.
+
 Version 1.7 includes safety checks on the consistency of the
 data you place in your training datafile. When a training
 file contains thousands of samples, it is difficult to
@@ -1585,7 +1614,7 @@ thousands or more decision nodes).  The speedup in Version
 of probabilities as the tree grows.  In addition, this
 version provides an additional constructor parameter,
 C<max_depth_desired> for controlling the size of the
-decisiotn tree.  This is in addition to the tree size
+decision tree.  This is in addition to the tree size
 control achieved by the parameter C<entropy_threshold> that
 was introduced in Version 1.3.  Since large decision trees
 can take a long time to create, you may find yourself
@@ -1633,14 +1662,14 @@ the issue of numeric values for features.
 B<Algorithm::DecisionTree> is a I<perl5> module for
 constructing a decision tree from a training datafile
 containing multidimensional data.  In one form or another,
-decision trees have been around for about fifty years. But
-their popularity during the last decade is owing to the
-entropy-based method proposed by Ross Quinlan for their
-construction.  Fundamental to Quinlan's approach is the
-notion that a decision node in a tree should be split only
-if the entropy at the ensuing child nodes will be less than
-the entropy at the node in question.  The implementation
-presented here is based on the same idea.
+decision trees have been around for about fifty
+years. However, their popularity during the last decade is
+owing to the entropy-based method proposed by Ross Quinlan
+for their construction.  Fundamental to Quinlan's approach
+is the notion that a decision node in a tree should be split
+only if the entropy at the ensuing child nodes will be less
+than the entropy at the node in question.  The
+implementation presented here is based on the same idea.
 
 For those not familiar with decision tree ideas, the
 traditional way to classify multidimensional data is to
@@ -1803,7 +1832,7 @@ C<max_depth_desired> and the larger the
 C<entropy_threshold>, the smaller the size of the decision
 tree.  The default value for C<max_depth_desired> is the
 number of features specified in the training datafile, and
-the the default value for C<entropy_threshold> is 0.001.
+the the default value for C<entropy_threshold> is 0.01.
 
 The users of this module with a need to create very large
 decision trees should also consider storing the tree once
@@ -2100,7 +2129,7 @@ generator, you need to ask it to read the parameter file.
 This parameter file named in the call to the test-data
 generator constructor must possess the same structure as for
 generating the training data.  In most cases, you would want
-to use the same paramter file both for generating the training
+to use the same parameter file both for generating the training
 data and the test data.
 
 =item B<$test_data_genC<< -> >>gen_test_data():>
@@ -2250,6 +2279,11 @@ if you have root access.  If not,
     make
     make test
     make install
+
+=head1 THANKS
+
+The bug in version 1.7 whose fix led to version 1.71 was
+discovered by Jeff Pattillo.  Thanks Jeff!
 
 =head1 AUTHOR
 

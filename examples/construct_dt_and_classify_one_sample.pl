@@ -13,9 +13,9 @@ my $training_datafile = "training.dat";
 #   want to see each node of the decision being constructed:
 my $dt = Algorithm::DecisionTree->new( 
                               training_datafile => $training_datafile,
-                              entropy_threshold => 0.1,
+                              entropy_threshold => 0.001,
                               max_depth_desired => 3,
-#                             debug1            => 1,
+#                              debug1            => 1,
 #                             debug2            => 1,
          );
 
@@ -33,7 +33,7 @@ my $root_node = $dt->construct_decision_tree_classifier();
 
 #   UNCOMMENT THE NEXT STATEMENT if you would like to see the
 #   decision tree displayed in your terminal window:
-#$root_node->display_decision_tree("     ");           
+$root_node->display_decision_tree("     ");           
 
 ### The following test_sample is for the training files with names
 ### like training.dat training2.dat:
