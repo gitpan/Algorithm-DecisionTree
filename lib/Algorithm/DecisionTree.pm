@@ -1,7 +1,7 @@
 package Algorithm::DecisionTree;
 
-#---------------------------------------------------------------------------
-# Copyright (c) 2012 Avinash Kak. All rights reserved.
+#--------------------------------------------------------------------------------------
+# Copyright (c) 2013 Avinash Kak. All rights reserved.
 # This program is free software.  You may modify and/or
 # distribute it under the same terms as Perl itself.
 # This copyright notice must remain attached to the file.
@@ -10,66 +10,16 @@ package Algorithm::DecisionTree;
 # a decision tree from training examples of multidimensional
 # data and then using the tree thus constructed to classify
 # new data.
-# ---------------------------------------------------------------------------
+#---------- ---------------------------------------------------------------------------
 
 use 5.10.0;
 use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '1.71';
+our $VERSION = '2.0';
 
-#############################   Constructors  #######################
-
-# Constructor for the training data generator:
-sub training_data_generator { 
-    my ($class, %args) = @_;
-    my @params = keys %args;
-    croak "\nYou have used a wrong name for a keyword argument " .
-          "--- perhaps a misspelling\n" 
-          if check_for_illegal_params1(@params) == 0;
-    bless {
-        _output_datafile             =>   $args{output_datafile} 
-                                          || croak("output_datafile required"),
-        _parameter_file              =>   $args{parameter_file},
-        _number_of_training_samples  =>   $args{number_of_training_samples},
-        _write_to_file               =>   $args{write_to_file} || 0,
-        _debug1                      =>   $args{debug1} || 0,
-        _debug2                      =>   $args{debug2} || 0,
-        _training_sample_records     =>   {},
-        _features_and_values_hash    =>   {},
-        _bias_hash                   =>   {},
-        _class_names                 =>   [],
-        _class_priors                =>   [],
-    }, $class;
-}
-
-
-# Constructor for the test data generator:
-sub test_data_generator { 
-    my ($class, %args) = @_;
-    my @params = keys %args;
-    croak "\nYou have used a wrong name for a keyword argument " .
-          "--- perhaps a misspelling\n" 
-          if check_for_illegal_params3(@params) == 0;
-    bless {
-        _output_test_datafile        =>   $args{output_test_datafile} 
-                                  || croak("output_test_datafile required"),
-        _output_class_labels_file    =>   $args{"output_class_label_file"}
-                                  || croak("output_class_label_file required"),
-        _parameter_file              =>   $args{parameter_file},
-        _number_of_test_samples      =>   $args{number_of_test_samples},
-        _write_to_file               =>   $args{write_to_file} || 0,
-        _debug1                      =>   $args{debug1} || 0,
-        _debug2                      =>   $args{debug2} || 0,
-        _test_sample_records         =>   {},
-        _features_and_values_hash    =>   {},
-        _bias_hash                   =>   {},
-        _class_names                 =>   [],
-        _class_priors                =>   [],
-    }, $class;
-}
-
+############################################   Constructor  ##############################################
 
 # Constructor for decision tree induction and classification with the tree:
 sub new { 
@@ -79,281 +29,709 @@ sub new {
           "--- perhaps a misspelling\n" 
           if check_for_illegal_params2(@params) == 0;
     bless {
-        _training_datafile           =>   $args{training_datafile} 
-                                        || croak("training_datafile required"),
-        _entropy_threshold           =>    $args{entropy_threshold} || 0.01,
-        _max_depth_desired           =>    $args{max_depth_desired} || undef,
-        _debug1                      =>    $args{debug1} || 0,
-        _debug2                      =>    $args{debug2} || 0,
-        _root_node                   =>    undef,
-        _probability_cache           =>    {},
-        _entropy_cache               =>    {},
-        _training_data_hash          =>    {},
-        _features_and_values_hash    =>    {},
-        _samples_class_label_hash    =>    {},
-        _class_names                 =>    [],
-        _class_priors                =>    [],
-        _feature_names               =>    [],
+        _training_datafile                   =>   $args{training_datafile} 
+                                                          || croak("training_datafile required"),
+        _entropy_threshold                   =>    $args{entropy_threshold} || 0.01,
+        _max_depth_desired                   =>    $args{max_depth_desired} || undef,
+        _debug1                              =>    $args{debug1} || 0,
+        _debug2                              =>    $args{debug2} || 0,
+        _debug3                              =>    $args{debug3} || 0,
+        _csv_class_column_index              =>    $args{csv_class_column_index} || undef,
+        _csv_columns_for_features            =>    $args{csv_columns_for_features} || undef,
+        _symbolic_to_numeric_cardinality_threshold
+                                             =>    $args{symbolic_to_numeric_cardinality_threshold} || 10,
+        _root_node                           =>    undef,
+        _probability_cache                   =>    {},
+        _entropy_cache                       =>    {},
+        _training_data_hash                  =>    {},
+        _features_and_values_hash            =>    {},
+        _samples_class_label_hash            =>    {},
+        _class_names                         =>    [],
+        _class_priors                        =>    [],
+        _feature_names                       =>    [],
+        _numeric_features_valuerange_hash    =>    {},
+        _sampling_points_for_numeric_feature_hash      =>      {},
+        _feature_values_how_many_uniques_hash          =>      {},
+        _prob_distribution_numeric_features_hash       =>      {},
+        _histogram_delta_hash                          =>      {},
+        _num_of_histogram_bins_hash                    =>      {},
     }, $class;
 }
 
+####################################  Classify with Decision Tree  #######################################
 
-#################    Classify with Decision Tree  ###################
-
+##  Classifies one test sample at a time using the decision tree constructed from
+##  your training file.  The data record for the test sample must be supplied as
+##  shown in the scripts in the `examples' subdirectory.  See the scripts
+##  construct_dt_and_classify_one_sample_caseX.pl in that subdirectory.
 sub classify {
     my $self = shift;
     my $root_node = shift;
-    my @features_and_values = @_;
-    croak "Error in the names you have used for features and/or values" 
-                  if ! $self->check_names_used(@features_and_values);    
-    my @class_names = @{$self->{_class_names}};
-    my $classification = $self->recursive_descent_for_classification( 
-                                      $root_node, @features_and_values );
-    if ($self->{_debug1}) {
-        print "\nThe classification:\n";
-        foreach my $class (@class_names) {
-            print "    $class with probability $classification->{$class}\n";
+    my $feature_and_values = shift;
+    my @features_and_values = @$feature_and_values;
+    @features_and_values = @{deep_copy_array(\@features_and_values)};
+    die "Error in the names you have used for features and/or values" 
+                        unless $self->check_names_used(\@features_and_values);
+    my @new_features_and_values = ();
+    my $pattern = '(\S+)\s*=\s*(\S+)';
+    foreach my $feature_and_value (@features_and_values) {
+        $feature_and_value =~ /$pattern/;
+        my ($feature, $value) = ($1, $2);
+        my $newvalue = $value;
+        my @unique_values_for_feature = @{$self->{_features_and_unique_values_hash}->{$feature}};
+        my $not_all_values_float = 0;
+        map {$not_all_values_float = 1 if $_ !~ /^\d*\.\d+$/} @unique_values_for_feature;
+        if (! contained_in($feature, keys %{$self->{_prob_distribution_numeric_features_hash}}) &&
+                                                                       $not_all_values_float == 0) {
+            $newvalue = closest_sampling_point($value, \@unique_values_for_feature);
+        }
+        push @new_features_and_values, "$feature" . '=' . "$newvalue";
+    }
+    @features_and_values = @new_features_and_values;
+    print "\nCL1 New feature and values: @features_and_values\n" if $self->{_debug3};
+    my %answer = ();
+    foreach my $class_name (@{$self->{_class_names}}) {
+        $answer{$class_name} = undef;
+    }
+    $answer{'solution_path'} = [];
+    my %classification = %{$self->recursive_descent_for_classification($root_node,\@features_and_values,\%answer)};
+    @{$answer{'solution_path'}} = reverse @{$answer{'solution_path'}};
+    if ($self->{_debug3}) {
+        print "\nCL2 The classification:\n";
+        foreach my $class_name (@{$self->{_class_names}}) {
+            print "    $class_name  with probability $classification{$class_name}\n";
         }
     }
-    return $classification;
+    my %classification_for_display = ();
+    foreach my $item (keys %classification) {
+        if ($item ne 'solution_path') {
+            $classification_for_display{$item} = sprintf("%0.3f", $classification{$item});
+        } else {
+            my @outlist = ();
+            foreach my $x (@{$classification{$item}}) {
+                push @outlist, "NODE$x";
+            }
+            $classification_for_display{$item} =  \@outlist;
+        }
+    }
+    return \%classification_for_display;
 }
 
 sub recursive_descent_for_classification {
     my $self = shift;
     my $node = shift;
-    my @feature_and_values = @_;
-    my @class_names = @{$self->{_class_names}};
-    my $feature_test_at_node = $node->get_feature();
-    my $value_for_feature;
-    my @remaining_features_and_values = ();
-    foreach my $feature_and_value (@feature_and_values) {
-        my ($feature, $value) = $feature_and_value =~ /(.+)=>(.+)/;
-        if ($feature eq $feature_test_at_node) {
-            $value_for_feature = $value;
-        } else {
-            push @remaining_features_and_values, $feature_and_value;
-        }
-    }
-    my $feature_value_combo = "$feature_test_at_node=>$value_for_feature"
-                     if defined $feature_test_at_node;
+    my $features_and_values = shift;
+    my $answer = shift;
+    my @features_and_values = @$features_and_values;
+    my %answer = %$answer;
     my @children = @{$node->get_children()};
     if (@children == 0) {
-        my %answer;
-        my @leaf_node_class_probabilities=@{$node->get_class_probabilities()};
-        foreach my $i (0..@class_names-1) {
-            $answer{$class_names[$i]} = $leaf_node_class_probabilities[$i];
+        my @leaf_node_class_probabilities = @{$node->get_class_probabilities()};
+        foreach my $i (0..@{$self->{_class_names}}-1) {
+            $answer{$self->{_class_names}->[$i]} = $leaf_node_class_probabilities[$i];
         }
+        push @{$answer{'solution_path'}}, $node->get_serial_num();
         return \%answer;
     }
-    my $answer;
-    foreach my $child (@children) {
-        my @branch_features_and_values = 
-               @{$child->get_branch_features_and_values()};
-        my $last_feature_and_value_on_branch = pop @branch_features_and_values;
-        if ($last_feature_and_value_on_branch eq $feature_value_combo) {
-            $answer = $self->recursive_descent_for_classification($child, 
-                                    @remaining_features_and_values);
-            last;
-        }
+    my $feature_tested_at_node = $node->get_feature();
+    print "\nCLRD1 Feature tested at node for classification: $feature_tested_at_node\n" 
+        if $self->{_debug3};
+    my $value_for_feature;
+    my $path_found;
+    my $pattern = '(\S+)\s*=\s*(\S+)';
+    foreach my $feature_and_value (@features_and_values) {
+        $feature_and_value =~ /$pattern/;
+        $value_for_feature = $2 if $feature_tested_at_node eq $1;
     }
-    return $answer;
-}    
+    if (contained_in($feature_tested_at_node, keys %{$self->{_prob_distribution_numeric_features_hash}})) {
+        print( "\nCLRD2 In the truly numeric section") if $self->{_debug3};
+        my $pattern1 = '(.+)<(.+)';
+        my $pattern2 = '(.+)>(.+)';
+        foreach my $child (@children) {
+            my @branch_features_and_values = @{$child->get_branch_features_and_values_or_thresholds()};
+            my $last_feature_and_value_on_branch = $branch_features_and_values[-1]; 
+            if ($last_feature_and_value_on_branch =~ /$pattern1/) {
+                my ($feature, $threshold) = ($1,$2); 
+                if ($value_for_feature <= $threshold) {
+                    $path_found = 1;
+                    %answer = %{$self->recursive_descent_for_classification($child,$features_and_values,\%answer)};
+                    push @{$answer{'solution_path'}}, $node->get_serial_num();
+                    last;
+                }
+            }
+            if ($last_feature_and_value_on_branch =~ /$pattern2/) {
+                my ($feature, $threshold) = ($1,$2); 
+                if ($value_for_feature > $threshold) {
+                    $path_found = 1;
+                    %answer = %{$self->recursive_descent_for_classification($child,$features_and_values,\%answer)};
+                    push @{$answer{'solution_path'}}, $node->get_serial_num();
+                    last;
+                }
+            }
+        }
+        return \%answer if $path_found;
+    } else {
+        my $feature_value_combo = "$feature_tested_at_node" . '=' . "$value_for_feature";
+        print "\nCLRD3 In the symbolic section with feature_value_combo: $feature_value_combo\n" 
+            if $self->{_debug3};
+        foreach my $child (@children) {
+            my @branch_features_and_values = @{$child->get_branch_features_and_values_or_thresholds()};
+            print "\nCLRD4 branch features and values: @branch_features_and_values\n" if $self->{_debug3};
+            my $last_feature_and_value_on_branch = $branch_features_and_values[-1]; 
+            if ($last_feature_and_value_on_branch eq $feature_value_combo) {
+                %answer = %{$self->recursive_descent_for_classification($child,$features_and_values,\%answer)};
+                push @{$answer{'solution_path'}}, $node->get_serial_num();
+                $path_found = 1;
+                last;
+            }
+        }
+        return \%answer if $path_found;
+    }
+    if (! $path_found) {
+        my @leaf_node_class_probabilities = @{$node->get_class_probabilities()};
+        foreach my $i (0..@{$self->{_class_names}}-1) {
+            $answer{$self->{_class_names}->[$i]} = $leaf_node_class_probabilities[$i];
+        }
+        push @{$answer{'solution_path'}}, $node->get_serial_num();
+    }
+    return \%answer;
+}
 
+
+##  If you want classification to be carried out by engaging a human user in a
+##  question-answer session, this is the method to use for that purpose.  See, for
+##  example, the script classify_by_asking_questions.pl in the `examples'
+##  subdirectory for an illustration of how to do that.
 sub classify_by_asking_questions {
     my $self = shift;
     my $root_node = shift;
-    my $classification = 
-        $self->interactive_recursive_descent_for_classification($root_node);
-    return $classification;
+    my %answer = ();
+    foreach my $class_name (@{$self->{_class_names}}) {
+        $answer{$class_name} = undef;
+    }
+    $answer{'solution_path'} = [];
+    my %scratchpad_for_numeric_answers = ();
+    foreach my $feature_name (keys %{$self->{_prob_distribution_numeric_features_hash}}) {
+        $scratchpad_for_numeric_answers{$feature_name} = undef;
+    }
+    my %classification = %{$self->interactive_recursive_descent_for_classification($root_node,
+                                                       \%answer, \%scratchpad_for_numeric_answers)};
+    @{$classification{'solution_path'}} = reverse @{$classification{'solution_path'}};
+    my %classification_for_display = ();
+    foreach my $item (keys %classification) {
+        if ($item ne 'solution_path') {
+            $classification_for_display{$item} = sprintf("%0.3f", $classification{$item});
+        } else {
+            my @outlist = ();
+            foreach my $x (@{$classification{$item}}) {
+                push @outlist, "NODE$x";
+            }
+            $classification_for_display{$item} =  \@outlist;
+        }
+    }
+    return \%classification_for_display;
 }
 
 sub interactive_recursive_descent_for_classification {
     my $self = shift;
     my $node = shift;
-    my @class_names = @{$self->{_class_names}};
-    my $feature_test_at_node = $node->get_feature();
-    my $value_for_feature;
+    my $answer = shift;
+    my $scratchpad_for_numerics = shift;
+    my %answer = %$answer;
+    my %scratchpad_for_numerics = %$scratchpad_for_numerics;
+    my $pattern1 = '(.+)<(.+)';
+    my $pattern2 = '(.+)>(.+)';
+    my $user_value_for_feature;
+    my @children = @{$node->get_children()};
+    if (@children == 0) {
+        my @leaf_node_class_probabilities = @{$node->get_class_probabilities()};
+        foreach my $i (0..@{$self->{_class_names}}-1) {
+            $answer{$self->{_class_names}->[$i]} = $leaf_node_class_probabilities[$i];
+        }
+        push @{$answer{'solution_path'}}, $node->get_serial_num();
+        return \%answer;
+    }
+    my @list_of_branch_attributes_to_children = ();
+    foreach my $child (@children) {   
+        my @branch_features_and_values = @{$child->get_branch_features_and_values_or_thresholds()};
+        my $feature_and_value_on_branch = $branch_features_and_values[-1];
+        push @list_of_branch_attributes_to_children, $feature_and_value_on_branch;
+    }
+    my $feature_tested_at_node = $node->get_feature();
     my $feature_value_combo;
-    if ($feature_test_at_node) {
-        my @possible_values_for_feature = 
-            sort @{$self->{_features_and_values_hash}->{$feature_test_at_node}};
-        while (1) {
-            $value_for_feature = undef;
-            print "\nWhat is the value for the feature '$feature_test_at_node'?" .
-                  "\nEnter one of: @possible_values_for_feature   =>   ";
-            $value_for_feature = <STDIN>;
-            chomp $value_for_feature;
-            my $answer_found = 0;
-            foreach my  $value (@possible_values_for_feature) {
-                if ($value eq $value_for_feature) {
+    my $path_found = 0;
+    if (contained_in($feature_tested_at_node, keys %{$self->{_prob_distribution_numeric_features_hash}})) {
+        if ($scratchpad_for_numerics{$feature_tested_at_node}) {
+            $user_value_for_feature = $scratchpad_for_numerics{$feature_tested_at_node};
+        } else {
+            my @valuerange =  @{$self->{_numeric_features_valuerange_hash}->{$feature_tested_at_node}};
+            while (1) { 
+                print "\nWhat is the value for the feature $feature_tested_at_node ?\n";
+                print "\nEnter a value in the range (@valuerange): ";
+                $user_value_for_feature = <STDIN>;
+                chomp $user_value_for_feature;
+                $user_value_for_feature =~ s/^\s*(\S+)\s*$/$1/;
+                my $answer_found = 0;
+                if ($user_value_for_feature >= $valuerange[0] && $user_value_for_feature <= $valuerange[1]) {
                     $answer_found = 1;
                     last;
                 }
+                last if $answer_found;
+                print("You entered illegal value. Let's try again")
             }
-            if ($answer_found == 1) {
+            $scratchpad_for_numerics{$feature_tested_at_node} = $user_value_for_feature;
+        }
+        foreach my $i (0..@list_of_branch_attributes_to_children-1) {
+            my $branch_attribute = $list_of_branch_attributes_to_children[$i];
+            if ($branch_attribute =~ /$pattern1/) {
+                my ($feature,$threshold) = ($1,$2);
+                if ($user_value_for_feature <= $threshold) {
+                    %answer = %{$self->interactive_recursive_descent_for_classification($children[$i],
+                                                                     \%answer, \%scratchpad_for_numerics)};
+                    $path_found = 1;
+                    push @{$answer{'solution_path'}}, $node->get_serial_num();
+                    last;
+                }
+            }
+            if ($branch_attribute =~ /$pattern2/) {
+                my ($feature,$threshold) = ($1,$2);
+                if ($user_value_for_feature > $threshold) {
+                    %answer = %{$self->interactive_recursive_descent_for_classification($children[$i],
+                                                                     \%answer, \%scratchpad_for_numerics)};
+                    $path_found = 1;
+                    push @{$answer{'solution_path'}}, $node->get_serial_num();
+                    last;
+                }
+            }
+        }
+        return \%answer if $path_found;
+    } else {
+        my @possible_values_for_feature = @{$self->{_features_and_unique_values_hash}->{$feature_tested_at_node}};
+        while (1) {
+            print "\nWhat is the value for the feature $feature_tested_at_node ?\n";
+            print "\nEnter a value from the list (@possible_values_for_feature): ";
+            $user_value_for_feature = <STDIN>;
+            chomp $user_value_for_feature;
+            $user_value_for_feature =~ s/^\s*(\S+)\s*$/$1/;
+            my $answer_found = 0;
+            if (contained_in($user_value_for_feature, @possible_values_for_feature)) {
+                $answer_found = 1;
                 last;
-            } else {
-                print("\nYou entered illegal value. Let's try again\n");
+            }
+            last if $answer_found;
+            print("You entered illegal value. Let's try again");
+        }
+        $feature_value_combo = "$feature_tested_at_node=$user_value_for_feature";
+        foreach my $i (0..@list_of_branch_attributes_to_children-1) {
+            my $branch_attribute = $list_of_branch_attributes_to_children[$i];
+            if ($branch_attribute eq $feature_value_combo) {
+                %answer = %{$self->interactive_recursive_descent_for_classification($children[$i],
+                                                                     \%answer, \%scratchpad_for_numerics)};
+                $path_found = 1;
+                push @{$answer{'solution_path'}}, $node->get_serial_num();
+                last;
             }
         }
-        $feature_value_combo = "$feature_test_at_node=>$value_for_feature";
+        return \%answer if $path_found;
     }
-    my @children = @{$node->get_children()};
-    if (@children == 0) {
-        my %answer;
-        my @leaf_node_class_probabilities=@{$node->get_class_probabilities()};
-        foreach my $i (0..@class_names-1) {
-            $answer{$class_names[$i]} = $leaf_node_class_probabilities[$i];
+    if (! $path_found) {
+        my @leaf_node_class_probabilities = @{$node->get_class_probabilities()};
+        foreach my $i (0..@{$self->{_class_names}}-1) {
+            $answer{$self->{_class_names}->[$i]} = $leaf_node_class_probabilities[$i];
         }
-        return \%answer;
+        push @{$answer{'solution_path'}}, $node->get_serial_num();
     }
-    my $answer;
-    foreach my $child (@children) {
-        my @branch_features_and_values = 
-               @{$child->get_branch_features_and_values()};
-        my $last_feature_and_value_on_branch = pop @branch_features_and_values;
-        if ($last_feature_and_value_on_branch eq $feature_value_combo) {
-            $answer = 
-              $self->interactive_recursive_descent_for_classification($child);
-            last;
-        }
-    }
-    return $answer;
+    return \%answer;
 }
 
-#################    Decision Tree Construction  ###################
+######################################    Decision Tree Construction  ####################################
 
+##  At the root node, we find the best feature that yields the greatest reduction in
+##  class entropy from the entropy based on just the class priors. The logic for
+##  finding this feature is different for symbolic features and for numeric features.
+##  That logic is built into the method shown later for best feature calculations.
 sub construct_decision_tree_classifier {
     my $self = shift;
-    my @class_names = @{$self->{_class_names}};
-    $self->determine_data_condition() if $self->{_debug1};
-    print "\nStarting construction of the decision tree:\n" 
-                              if $self->{_debug1};
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my @features = keys %features_and_values_hash;
-    my @class_probabilities = map {$self->prior_probability_for_class($_)} 
-                                                           @class_names;
+    if ($self->{_debug3}) {        
+        $self->determine_data_condition(); 
+        print "\nStarting construction of the decision tree:\n";
+    }
+    my @class_probabilities = map {$self->prior_probability_for_class($_)} @{$self->{_class_names}};
+    if ($self->{_debug3}) { 
+        print "\nPrior class probabilities: @class_probabilities\n";
+        print "\nClass names: @{$self->{_class_names}}\n";
+    }
     my $entropy = $self->class_entropy_on_priors();
-    my $root_node = Node->new( undef, 
-                               $entropy, 
-                               \@class_probabilities, []);
+    print "\nClass entropy on priors: $entropy\n" if $self->{_debug3};
+    my $root_node = DTNode->new(undef, $entropy, \@class_probabilities, []);
+    DTNode->set_class_names(\@{$self->{_class_names}});
     $self->{_root_node} = $root_node;
     $self->recursive_descent($root_node);
     return $root_node;
 }
 
+##  After the root node of the decision tree is calculated by the previous methods,
+##  we invoke this method recursively to create the rest of the tree.  At each node,
+##  we find the feature that achieves the largest entropy reduction with regard to
+##  the partitioning of the training data samples that correspond to that node.
 sub recursive_descent {
     my $self = shift;
     my $node = shift;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my @features = keys %features_and_values_hash;
-    my @class_names = @{$self->{_class_names}};
-    my @features_and_values_on_branch = 
-          @{$node->get_branch_features_and_values()};
-    my ($best_feature, $best_feature_entropy) = 
-         $self->best_feature_calculator(@features_and_values_on_branch);
+    print "\n==================== ENTERING RECURSIVE DESCENT ==========================\n"
+        if $self->{_debug3};
+    my $node_serial_number = $node->get_serial_num();
+    my @features_and_values_or_thresholds_on_branch = @{$node->get_branch_features_and_values_or_thresholds()};
+    my $existing_node_entropy = $node->get_node_entropy();
+    if ($self->{_debug3}) { 
+        print "\nRD1 NODE SERIAL NUMBER: $node_serial_number\n";
+        print "\nRD2 Existing Node Entropy: $existing_node_entropy\n";
+        print "\nRD3 features_and_values_or_thresholds_on_branch: @features_and_values_or_thresholds_on_branch\n";
+        my @class_probs = @{$node->get_class_probabilities()};
+        print "\nRD4 Class probabilities: @class_probs\n";
+    }
+    if ($existing_node_entropy < $self->{_entropy_threshold}) { 
+        print "\nRD5 returning because existing node entropy is below threshold\n" if $self->{_debug3};
+        return;
+    }
+    my @copy_of_path_attributes = @{deep_copy_array(\@features_and_values_or_thresholds_on_branch)};
+    my ($best_feature, $best_feature_entropy, $best_feature_val_entropies, $decision_val) =
+                    $self->best_feature_calculator(\@copy_of_path_attributes, $existing_node_entropy);
     $node->set_feature($best_feature);
-    $node->display_node() if $self->{_debug1};
-    return if defined($self->{_max_depth_desired}) &&
-        (@features_and_values_on_branch >= $self->{_max_depth_desired});
+    $node->display_node() if $self->{_debug3};
+    if (defined($self->{_max_depth_desired}) && 
+               (@features_and_values_or_thresholds_on_branch >= $self->{_max_depth_desired})) {
+        print "\nRD6 REACHED LEAF NODE AT MAXIMUM DEPTH ALLOWED\n" if $self->{_debug3}; 
+        return;
+    }
     return if ! defined $best_feature;
-    if ($best_feature_entropy 
-               < $node->get_entropy() - $self->{_entropy_threshold}) {
-        my @values_for_feature = 
-              @{$features_and_values_hash{$best_feature}};
-        my @feature_value_combos = map {"$best_feature=>$_"} 
-                                               @values_for_feature;
-        foreach my $feature_and_value (@feature_value_combos) {
-            my @extended_branch_features_and_values;
-            if (!@features_and_values_on_branch) {
-                @extended_branch_features_and_values = ($feature_and_value);
-            } else {
-                @extended_branch_features_and_values =
-                    @{deep_copy_array( \@features_and_values_on_branch )};
-                push @extended_branch_features_and_values, $feature_and_value;
+    if ($self->{_debug3}) { 
+        print "\nRD7 Existing entropy at node: $existing_node_entropy\n";
+        print "\nRD8 Calculated best feature is $best_feature and its value $decision_val\n";
+        print "\nRD9 Best feature entropy: $best_feature_entropy\n";
+        print "\nRD10 Calculated entropies for different values of best feature: @$best_feature_val_entropies\n";
+    }
+    my $entropy_gain = $existing_node_entropy - $best_feature_entropy;
+    print "\nRD11 Expected entropy gain at this node: $entropy_gain\n" if $self->{_debug3};
+    if ($entropy_gain > $self->{_entropy_threshold}) {
+        if (exists $self->{_numeric_features_valuerange_hash}->{$best_feature} && 
+              $self->{_feature_values_how_many_uniques_hash}->{$best_feature} > 
+                                        $self->{_symbolic_to_numeric_cardinality_threshold}) {
+            my $best_threshold = $decision_val;            # as returned by best feature calculator
+            my ($best_entropy_for_less, $best_entropy_for_greater) = @$best_feature_val_entropies;
+            my @extended_branch_features_and_values_or_thresholds_for_lessthan_child = 
+                                        @{deep_copy_array(\@features_and_values_or_thresholds_on_branch)};
+            my @extended_branch_features_and_values_or_thresholds_for_greaterthan_child  = 
+                                        @{deep_copy_array(\@features_and_values_or_thresholds_on_branch)}; 
+            my $feature_threshold_combo_for_less_than = "$best_feature" . '<' . "$best_threshold";
+            my $feature_threshold_combo_for_greater_than = "$best_feature" . '>' . "$best_threshold";
+            push @extended_branch_features_and_values_or_thresholds_for_lessthan_child, 
+                                                                  $feature_threshold_combo_for_less_than;
+            push @extended_branch_features_and_values_or_thresholds_for_greaterthan_child, 
+                                                               $feature_threshold_combo_for_greater_than;
+            if ($self->{_debug3}) {
+                print "\nRD12 extended_branch_features_and_values_or_thresholds_for_lessthan_child: " .
+                      "@extended_branch_features_and_values_or_thresholds_for_lessthan_child\n";
+                print "\nRD13 extended_branch_features_and_values_or_thresholds_for_greaterthan_child: " .
+                      "@extended_branch_features_and_values_or_thresholds_for_greaterthan_child\n";
             }
-            my @class_probabilities = 
-               map 
-               {$self->probability_for_a_class_given_sequence_of_features_and_values(
-                    $_, @extended_branch_features_and_values) }
-               @class_names;
-            my $child_node = Node->new( undef, $best_feature_entropy,
-                                       \@class_probabilities,
-                                       \@extended_branch_features_and_values);
-            $node->add_child_link( $child_node );
-            $self->recursive_descent( $child_node );
+            my @class_probabilities_for_lessthan_child_node = 
+                map {$self->probability_of_a_class_given_sequence_of_features_and_values_or_thresholds($_,
+                 \@extended_branch_features_and_values_or_thresholds_for_lessthan_child)} @{$self->{_class_names}};
+            my @class_probabilities_for_greaterthan_child_node = 
+                map {$self->probability_of_a_class_given_sequence_of_features_and_values_or_thresholds($_,
+              \@extended_branch_features_and_values_or_thresholds_for_greaterthan_child)} @{$self->{_class_names}};
+            if ($self->{_debug3}) {
+                print "\nRD14 class entropy for going down lessthan child: $best_entropy_for_less\n";
+                print "\nRD15 class_entropy_for_going_down_greaterthan_child: $best_entropy_for_greater\n";
+            }
+            if ($best_entropy_for_less < $existing_node_entropy - $self->{_entropy_threshold}) {
+                my $left_child_node = DTNode->new(undef, $best_entropy_for_less,
+                                                         \@class_probabilities_for_lessthan_child_node,
+                                   \@extended_branch_features_and_values_or_thresholds_for_lessthan_child);
+                $node->add_child_link($left_child_node);
+                $self->recursive_descent($left_child_node);
+            }
+            if ($best_entropy_for_greater < $existing_node_entropy - $self->{_entropy_threshold}) {
+                my $right_child_node = DTNode->new(undef, $best_entropy_for_greater,
+                                                         \@class_probabilities_for_greaterthan_child_node,
+                                \@extended_branch_features_and_values_or_thresholds_for_greaterthan_child);
+                $node->add_child_link($right_child_node);
+                $self->recursive_descent($right_child_node);
+            }
+        } else {
+            print "\nRD16 RECURSIVE DESCENT: In section for symbolic features for creating children"
+                if $self->{_debug3};
+            my @values_for_feature = @{$self->{_features_and_unique_values_hash}->{$best_feature}};
+            print "\nRD17 Values for feature $best_feature are @values_for_feature\n" if $self->{_debug3};
+            my @feature_value_combos = sort map {"$best_feature" . '=' . $_} @values_for_feature;
+            my @class_entropies_for_children = ();
+            foreach my $feature_and_value_index (0..@feature_value_combos-1) {
+                print "\nRD18 Creating a child node for: $feature_value_combos[$feature_and_value_index]\n"
+                    if $self->{_debug3};
+                my @extended_branch_features_and_values_or_thresholds;
+                if (! @features_and_values_or_thresholds_on_branch) {
+                    @extended_branch_features_and_values_or_thresholds = 
+                                                          ($feature_value_combos[$feature_and_value_index]);
+                } else {
+                    @extended_branch_features_and_values_or_thresholds = 
+                        @{deep_copy_array(\@features_and_values_or_thresholds_on_branch)};
+                    push @extended_branch_features_and_values_or_thresholds, 
+                                           $feature_value_combos[$feature_and_value_index];
+                }
+                my @class_probabilities =
+                   map {$self->probability_of_a_class_given_sequence_of_features_and_values_or_thresholds($_,
+                               \@extended_branch_features_and_values_or_thresholds)} @{$self->{_class_names}};
+                my $class_entropy_for_child = 
+                      $self->class_entropy_for_a_given_sequence_of_features_and_values_or_thresholds(
+                                                         \@extended_branch_features_and_values_or_thresholds);
+                if ($self->{_debug3}) {
+                    print "\nRD19 branch attributes: @extended_branch_features_and_values_or_thresholds\n";
+                    print "\nRD20 class entropy for child: $class_entropy_for_child\n"; 
+                }
+                if ($existing_node_entropy - $class_entropy_for_child > $self->{_entropy_threshold}) {
+                    my $child_node = DTNode->new(undef, $class_entropy_for_child,
+                               \@class_probabilities, \@extended_branch_features_and_values_or_thresholds);
+                    $node->add_child_link($child_node);
+                    $self->recursive_descent($child_node);
+                } else {
+                    print "\nRD21 This child will NOT result in a node\n" if $self->{_debug3};
+                }
+            }
         }
+    } else {
+        print "\nRD22 REACHED LEAF NODE NATURALLY for: @features_and_values_or_thresholds_on_branch\n" 
+            if $self->{_debug3};
+        return;
     }
 }
 
-# Say you have landed on a new node with a history of feature-value
-# pairs along the path from the root to the node.  Now you need to
-# decide what feature test would work the best at this new node.
+##  This is the heart of the decision tree constructor.  Its main job is to figure
+##  out the best feature to use for partitioning the training data samples that
+##  correspond to the current node.  The search for the best feature is carried out
+##  differently for symbolic features and for numeric features.  For a symbolic
+##  feature, the method estimates the entropy for each value of the feature and then
+##  averages out these entropies as a measure of the discriminatory power of that
+##  features.  For a numeric feature, on the other hand, it estimates the entropy
+##  reduction that can be achieved if were to partition the set of training samples
+##  for each possible threshold.  For a numeric features, all possible sampling
+##  points relevant to the node in question are considered as candidates for
+##  thresholds.
 sub best_feature_calculator {
     my $self = shift;
-    my @features_and_values_on_branch = @_;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my @features_already_used = [];
-    foreach my $feature_and_value (@features_and_values_on_branch) {    
-        my ($feature, $value) = $feature_and_value =~ /(.+)=>(.+)/;
-        push @features_already_used, $feature;
+    my $features_and_values_or_thresholds_on_branch = shift;
+    my $existing_node_entropy = shift;
+    my @features_and_values_or_thresholds_on_branch =  @$features_and_values_or_thresholds_on_branch;
+    my $pattern1 = '(.+)=(.+)';
+    my $pattern2 = '(.+)<(.+)';
+    my $pattern3 = '(.+)>(.+)';
+    my @all_symbolic_features = ();
+    foreach my $feature_name (@{$self->{_feature_names}}) {
+        push @all_symbolic_features, $feature_name 
+            if ! exists $self->{_prob_distribution_numeric_features_hash}->{$feature_name};
     }
-    my @feature_tests_not_yet_used = ();
-    my @all_features = keys %features_and_values_hash;
-    foreach my $feature (@all_features) {
-        if ( !contained_in($feature, @features_already_used) ) {
-            push @feature_tests_not_yet_used, $feature;
+    my @symbolic_features_already_used = ();  
+    foreach my $feature_and_value_or_threshold (@features_and_values_or_thresholds_on_branch) {
+        push @symbolic_features_already_used, $1 if $feature_and_value_or_threshold =~ /$pattern1/;
+    }
+    my @symbolic_features_not_yet_used;
+    foreach my $x (@all_symbolic_features) {
+        push @symbolic_features_not_yet_used, $x unless contained_in($x, @symbolic_features_already_used);
+    }
+    my @true_numeric_types = ();
+    my @symbolic_types = ();
+    my @true_numeric_types_feature_names = ();
+    my @symbolic_types_feature_names = ();
+    foreach my $item (@features_and_values_or_thresholds_on_branch) {
+        if ($item =~ /$pattern2/) {
+            push @true_numeric_types, $item;
+            push @true_numeric_types_feature_names, $1;
+        } elsif ($item =~ /$pattern3/) {
+            push @true_numeric_types, $item;
+            push @true_numeric_types_feature_names, $1;
+        } elsif ($item =~ /$pattern1/) {
+            push @symbolic_types, $item;
+            push @symbolic_types_feature_names, $1;
+        } else {
+            die "format error in the representation of feature and values or thresholds";
         }
     }
-    return if @feature_tests_not_yet_used == 0;
-    my @array_of_entropy_values_for_different_features;
-    foreach my $i (0..@feature_tests_not_yet_used-1) {
-        my @values =@{$features_and_values_hash{$feature_tests_not_yet_used[$i]}};
-        my $entropy_for_new_feature;
-        foreach my $value (@values) {
-            my $feature_and_value_string = 
-                "$feature_tests_not_yet_used[$i]=>$value";
-            my  @extended_features_and_values_on_branch;
-            if (@features_and_values_on_branch) {
-                @extended_features_and_values_on_branch =
-                  @{deep_copy_array(\@features_and_values_on_branch)};
-                push @extended_features_and_values_on_branch, 
-                                      $feature_and_value_string;   
+    my %seen = ();
+    @true_numeric_types_feature_names = grep {$_ if !$seen{$_}++} @true_numeric_types_feature_names;
+    %seen = ();
+    @symbolic_types_feature_names = grep {$_ if !$seen{$_}++} @symbolic_types_feature_names;
+    my @bounded_intervals_numeric_types = 
+                       @{$self->find_bounded_intervals_for_numeric_features(\@true_numeric_types)};
+    # Calculate the upper and the lower bounds to be used when searching for the best
+    # threshold for each of the numeric features that are in play at the current node:
+    my (%upperbound, %lowerbound);
+    foreach my $feature (@true_numeric_types_feature_names) {
+        $upperbound{$feature} = undef;
+        $lowerbound{$feature} = undef;
+    }
+    foreach my $item (@bounded_intervals_numeric_types) {
+        foreach my $feature_grouping (@$item) {
+            if ($feature_grouping->[1] eq '>') {
+                $lowerbound{$feature_grouping->[0]} = $feature_grouping->[2];
             } else {
-                @extended_features_and_values_on_branch  =
-                    ($feature_and_value_string);
-            }                      
-            if (!defined $entropy_for_new_feature) {
-                $entropy_for_new_feature =
-                 $self->class_entropy_for_a_given_sequence_of_features_values(
-                     @extended_features_and_values_on_branch) 
-                 *
-                 $self->probability_of_a_sequence_of_features_and_values(
-                     @extended_features_and_values_on_branch);
-                next;
-            } else {
-                $entropy_for_new_feature += 
-                 $self->class_entropy_for_a_given_sequence_of_features_values(
-                     @extended_features_and_values_on_branch) 
-                 *
-                 $self->probability_of_a_sequence_of_features_and_values(
-                     @extended_features_and_values_on_branch);
+                $upperbound{$feature_grouping->[0]} = $feature_grouping->[2];
             }
         }
-        $array_of_entropy_values_for_different_features[$i] =
-                         $entropy_for_new_feature;
     }
-    my ($minimum, $index) = minimum( 
-        \@array_of_entropy_values_for_different_features);
-    return $feature_tests_not_yet_used[$index], $minimum;
+    my %entropy_values_for_different_features = ();
+    my %partitioning_point_child_entropies_hash = ();
+    my %partitioning_point_threshold = ();
+    my %entropies_for_different_values_of_symbolic_feature = ();
+    foreach my $feature (@{$self->{_feature_names}}) {
+        $entropy_values_for_different_features{$feature} = [];
+        $partitioning_point_child_entropies_hash{$feature} = {};
+        $partitioning_point_threshold{$feature} = undef;
+        $entropies_for_different_values_of_symbolic_feature{$feature} = [];
+    }
+    foreach my $i (0..@{$self->{_feature_names}}-1) {
+        my $feature_name = $self->{_feature_names}->[$i];
+        print "\n\nBFC1          FEATURE BEING CONSIDERED: $feature_name\n" if $self->{_debug3};
+        if (contained_in($feature_name, @symbolic_features_already_used)) {
+            next;
+        } elsif (contained_in($feature_name, keys %{$self->{_numeric_features_valuerange_hash}}) &&
+                 $self->{_feature_values_how_many_uniques_hash}->{$feature_name} >
+                                      $self->{_symbolic_to_numeric_cardinality_threshold}) {
+            my @values = @{$self->{_sampling_points_for_numeric_feature_hash}->{$feature_name}};
+            print "\nBFC4 values for $feature_name are @values\n" if $self->{_debug3};      
+            my @newvalues = ();
+            if (contained_in($feature_name, @true_numeric_types_feature_names)) {
+                if ($upperbound{$feature_name} && $lowerbound{$feature_name} &&
+                              $lowerbound{$feature_name} >= $upperbound{$feature_name}) {
+                    next;
+                } elsif ($upperbound{$feature_name} && $lowerbound{$feature_name} &&
+                                    $lowerbound{$feature_name} < $upperbound{$feature_name}) {
+                    foreach my $x (@values) {
+                        push @newvalues, $x if $x > $lowerbound{$feature_name} && $x <= $upperbound{$feature_name};
+                    }
+                } elsif ($upperbound{$feature_name}) {
+                    foreach my $x (@values) {
+                        push @newvalues, $x if $x <= $upperbound{$feature_name};
+                    }
+                } elsif ($lowerbound{$feature_name}) {
+                    foreach my $x (@values) {
+                        push @newvalues, $x if $x > $lowerbound{$feature_name};
+                    }
+                } else {
+                    die "Error is bound specifications in best feature calculator";
+                }
+            } else {
+                @newvalues = @{deep_copy_array(\@values)};
+            }
+            next if @newvalues == 0;
+            my @partitioning_entropies = ();            
+            foreach my $value (@newvalues) {
+                my $feature_and_less_than_value_string =  "$feature_name" . '<' . "$value";
+                my $feature_and_greater_than_value_string = "$feature_name" . '>' . "$value";
+                my @for_left_child;
+                my @for_right_child;
+                if (@features_and_values_or_thresholds_on_branch) {
+                    @for_left_child = @{deep_copy_array(\@features_and_values_or_thresholds_on_branch)};
+                    push @for_left_child, $feature_and_less_than_value_string;
+                    @for_right_child = @{deep_copy_array(\@features_and_values_or_thresholds_on_branch)};
+                    push @for_right_child, $feature_and_greater_than_value_string;
+                } else {
+                    @for_left_child = ($feature_and_less_than_value_string);
+                    @for_right_child = ($feature_and_greater_than_value_string);
+                }
+                my $entropy1 = $self->class_entropy_for_less_than_threshold_for_feature(
+                                    \@features_and_values_or_thresholds_on_branch, $feature_name, $value);
+                my $entropy2 = $self->class_entropy_for_greater_than_threshold_for_feature(
+                                    \@features_and_values_or_thresholds_on_branch, $feature_name, $value);
+                my $partitioning_entropy = $entropy1 * 
+                     $self->probability_of_a_sequence_of_features_and_values_or_thresholds(\@for_left_child) +
+                                           $entropy2 *
+                     $self->probability_of_a_sequence_of_features_and_values_or_thresholds(\@for_right_child);
+
+                push @partitioning_entropies, $partitioning_entropy;
+                $partitioning_point_child_entropies_hash{$feature_name}{$value} = [$entropy1, $entropy2];
+            }
+            my ($min_entropy, $best_partition_point_index) = minimum(\@partitioning_entropies);
+            if ($min_entropy < $existing_node_entropy) {
+                $partitioning_point_threshold{$feature_name} = $newvalues[$best_partition_point_index];
+                $entropy_values_for_different_features{$feature_name} = $min_entropy;
+            }
+        } else {
+            print "\nBFC2:  Entering section reserved for symbolic features\n" if $self->{_debug3};
+            print "\nBFC3 Feature name: $feature_name\n" if $self->{_debug3};
+            my %seen;
+            my @values = grep {$_ ne 'NA' && !$seen{$_}++} 
+                                    @{$self->{_features_and_unique_values_hash}->{$feature_name}};
+            @values = sort @values;
+            print "\nBFC4 values for feature $feature_name are @values\n" if $self->{_debug3};
+
+            my $entropy = 0;
+            foreach my $value (@values) {
+                my $feature_value_string = "$feature_name" . '=' . "$value";
+                print "\nBFC4 feature_value_string: $feature_value_string\n" if $self->{_debug3};
+                my @extended_attributes = @{deep_copy_array(\@features_and_values_or_thresholds_on_branch)};
+                if (@features_and_values_or_thresholds_on_branch) {
+                    push @extended_attributes, $feature_value_string;
+                } else {
+                    @extended_attributes = ($feature_value_string);
+                }
+                $entropy += 
+           $self->class_entropy_for_a_given_sequence_of_features_and_values_or_thresholds(\@extended_attributes) * 
+           $self->probability_of_a_sequence_of_features_and_values_or_thresholds(\@extended_attributes);
+                print "\nBFC5 Entropy calculated for symbolic feature value choice ($feature_name,$value) " .
+                      "is $entropy\n" if $self->{_debug3};
+                push @{$entropies_for_different_values_of_symbolic_feature{$feature_name}}, $entropy;
+            }
+            if ($entropy < $existing_node_entropy) {
+                $entropy_values_for_different_features{$feature_name} = $entropy;
+            }
+        }
+    }
+    my $min_entropy_for_best_feature;
+    my $best_feature_name;
+    foreach my $feature_nom (keys %entropy_values_for_different_features) { 
+        if (!defined($best_feature_name)) {
+            $best_feature_name = $feature_nom;
+            $min_entropy_for_best_feature = $entropy_values_for_different_features{$feature_nom};
+        } else {
+            if ($entropy_values_for_different_features{$feature_nom} < $min_entropy_for_best_feature) {
+                $best_feature_name = $feature_nom;
+                $min_entropy_for_best_feature = $entropy_values_for_different_features{$feature_nom};
+            }
+        }
+    }
+    my $threshold_for_best_feature;
+    if (exists $partitioning_point_threshold{$best_feature_name}) {
+        $threshold_for_best_feature = $partitioning_point_threshold{$best_feature_name};
+    } else {
+        $threshold_for_best_feature = undef;
+    }
+    my $best_feature_entropy = $min_entropy_for_best_feature;
+    my @val_based_entropies_to_be_returned;
+    my $decision_val_to_be_returned;
+    if (exists $self->{_numeric_features_valuerange_hash}->{$best_feature_name} && 
+          $self->{_feature_values_how_many_uniques_hash}->{$best_feature_name} > 
+                                    $self->{_symbolic_to_numeric_cardinality_threshold}) {
+        @val_based_entropies_to_be_returned = 
+            @{$partitioning_point_child_entropies_hash{$best_feature_name}{$threshold_for_best_feature}};
+    } else {
+        @val_based_entropies_to_be_returned = ();
+    }
+    if (exists $partitioning_point_threshold{$best_feature_name}) {
+        $decision_val_to_be_returned = $partitioning_point_threshold{$best_feature_name};
+    } else {
+        $decision_val_to_be_returned = undef;
+    }
+    print "\nBFC6 Val based entropies to be returned for feature $best_feature_name are " .
+        "@val_based_entropies_to_be_returned\n"  if $self->{_debug3};
+    return ($best_feature_name, $best_feature_entropy, \@val_based_entropies_to_be_returned, 
+                                                                      $decision_val_to_be_returned);
 }
 
 sub number_of_nodes_created {
-    Node->how_many_nodes();
+    DTNode->how_many_nodes();
 }
 
 
-#################    Entropy Calculators       #####################
+#########################################    Entropy Calculators     #####################################
 
 sub class_entropy_on_priors {
     my $self = shift;
@@ -376,229 +754,129 @@ sub class_entropy_on_priors {
     return $entropy;
 }
 
-sub class_entropy_for_a_given_sequence_of_features_values {
+sub entropy_scanner_for_a_numeric_feature {
+    local $| = 1;
     my $self = shift;
-    my @array_of_features_and_values = @_;
-    my $sequence = join ':', @array_of_features_and_values;
-    return $self->{_entropy_cache}->{$sequence}
-        if exists $self->{_entropy_cache}->{$sequence};
-    my @class_names = @{$self->{_class_names}};
-    my $entropy;
-    foreach my $class (@class_names) {
-        my $prob = 
-         $self->probability_for_a_class_given_sequence_of_features_and_values(
-             $class, @array_of_features_and_values);
-        $prob = 1.0/@class_names if $prob == 0;
-        my $log_prob = log($prob) / log(2) 
-                  if ($prob >= 0.0001) && ($prob <= 0.999) ;
-        $log_prob = 0 if $prob < 0.0001;           # since X.log(X)->0 as X->0
-        $log_prob = 0 if $prob > 0.999;            # since log(1) = 0
-        if (!defined $entropy) {
-            $entropy = -1.0 * $prob * $log_prob; 
-            next;
+    my $feature = shift;
+    my @all_sampling_points = @{$self->{_sampling_points_for_numeric_feature_hash}->{$feature}};
+    my @entropies_for_less_than_thresholds = ();
+    my @entropies_for_greater_than_thresholds = ();
+    foreach my $point (@all_sampling_points) {
+        print ". ";
+        push @entropies_for_less_than_thresholds, 
+                         $self->class_entropy_for_less_than_threshold_for_feature([], $feature, $point);
+        push @entropies_for_greater_than_thresholds,
+                      $self->class_entropy_for_greater_than_threshold_for_feature([], $feature, $point);
+    }
+    print "\n\nSCANNER: All entropies less than thresholds for feature $feature are: ". 
+                                                                "@entropies_for_less_than_thresholds\n";
+    print "\nSCANNER: All entropies greater than thresholds for feature $feature are: ". 
+                                                             "@entropies_for_greater_than_thresholds\n";
+}   
+
+sub class_entropy_for_less_than_threshold_for_feature {
+    my $self = shift;
+    my $arr = shift;
+    my $feature = shift;
+    my $threshold = shift;
+    my @array_of_features_and_values_or_thresholds = @$arr;
+    my $feature_threshold_combo = "$feature" . '<' . "$threshold";
+    my $sequence = join ":", @array_of_features_and_values_or_thresholds;
+    $sequence .= ":" . $feature_threshold_combo;
+    return $self->{_entropy_cache}->{$sequence}  if exists $self->{_entropy_cache}->{$sequence};
+    my @copy_of_array_of_features_and_values_or_thresholds = 
+                                       @{deep_copy_array(\@array_of_features_and_values_or_thresholds)};
+    push @copy_of_array_of_features_and_values_or_thresholds, $feature_threshold_combo;
+    my $entropy = 0;
+    foreach my $class_name (@{$self->{_class_names}}) {
+        my $log_prob = undef;
+        my $prob = $self->probability_of_a_class_given_sequence_of_features_and_values_or_thresholds(
+                                   $class_name, \@copy_of_array_of_features_and_values_or_thresholds);
+        if ($prob >= 0.0001 && $prob <= 0.999) {
+            $log_prob = log($prob) / log(2.0);
+        } elsif ($prob < 0.0001) {
+            $log_prob = 0;
+        } elsif ($prob > 0.999) {
+            $log_prob = 0;
+        } else {
+            die "An error has occurred in log_prob calculation";
         }
-        $entropy += -1.0 * $prob * $log_prob;
+        $entropy +=  -1.0 * $prob * $log_prob;
+    }
+    if (abs($entropy) < 0.0000001) {
+        $entropy = 0.0;
     }
     $self->{_entropy_cache}->{$sequence} = $entropy;
     return $entropy;
 }
 
-#################    Probability Calculators   ######################
-
-# args order: $class_name, @array_of_features_and_values
-sub probability_for_a_class_given_sequence_of_features_and_values {
+sub class_entropy_for_greater_than_threshold_for_feature {
     my $self = shift;
-    my $class_wanted = shift;
-    my @array_of_features_and_values = @_;
-    my $sequence = join ':', @array_of_features_and_values;
-    my $class_and_sequence = $class_wanted .  '::' . $sequence;
-    return $self->{_probability_cache}->{$class_and_sequence} 
-        if exists $self->{_probability_cache}->{$class_and_sequence}; 
-    my @class_names = @{$self->{_class_names}};
-    my @array_of_class_probabilities = (0) x @class_names;
-    foreach my $i (0..@class_names-1) {
-        my $prob = 
-          $self->probability_for_sequence_of_features_and_values_given_class(
-                                             $class_names[$i],
-                                             @array_of_features_and_values);
-        $array_of_class_probabilities[$i] = 0 if $prob == 0;
-        next if $prob == 0;
-        # If the above prob is not zero, the following prob should also not
-        # be zero:
-        my $prob_of_feature_sequence = 
-            $self->probability_of_a_sequence_of_features_and_values(
-                                             @array_of_features_and_values);
-        $array_of_class_probabilities[$i] = 
-              $prob * $self->prior_probability_for_class($class_names[$i])
-             / $prob_of_feature_sequence;
-    }
-    # The following normalization is dictated by the fact that when the
-    # database is small, the answer returned by this function may not
-    # add up to 1 when summed over the different classes.
-    my $sum_probability = 0;
-    map {$sum_probability += $_} @array_of_class_probabilities;
-    # An important implementation issue here is what to do if a particular
-    # (feature, value) does NOT show up on any sample in the training file.
-    # When this happens, $sum_probability will be zero.  We take the 
-    # position that such a (feature,value) pair is agnostic about what
-    # it can tell us about the relative importance of classes.  So, for 
-    # such a pair, we set the class probabilities to reflect a uniform
-    # distribution:
-    if ($sum_probability == 0) {
-        @array_of_class_probabilities = (1.0/@class_names) x @class_names;
-    } else {
-        @array_of_class_probabilities = map {$_ / $sum_probability} 
-                                            @array_of_class_probabilities;
-    }
-    foreach my $i (0..@{$self->{_class_names}}-1) {
-        my $this_class_and_sequence = 
-                   $self->{_class_names}->[$i] . '::' . $sequence;
-        $self->{_probability_cache}->{$this_class_and_sequence} = 
-                                   $array_of_class_probabilities[$i];
-    }
-    return $self->{_probability_cache}->{$class_and_sequence};
-}
-
-# arg order:  classname, array of feature=>value pairs
-sub probability_for_sequence_of_features_and_values_given_class {
-    my $self = shift;
-    my $class = shift;
-    my @array_of_features_and_values = @_;
-    my $sequence = join ':', @array_of_features_and_values;
-    my $sequence_with_class = $sequence . '::' . $class;
-    return $self->{_probability_cache}->{$sequence_with_class}
-        if exists $self->{_probability_cache}->{$sequence_with_class};
-    my $probability;
-    foreach my $feature_and_value (@array_of_features_and_values) {
-        my ($feature, $value) = $feature_and_value =~/(.+)=>(.+)/;
-        if (!defined $probability) {
-            $probability = $self->probability_for_feature_value_given_class(
-                                             $feature, $value, $class);
-            next;
+    my $arr = shift;
+    my $feature = shift;
+    my $threshold = shift;
+    my @array_of_features_and_values_or_thresholds = @$arr;
+    my $feature_threshold_combo = "$feature" . '>' . "$threshold";
+    my $sequence = join ":", @array_of_features_and_values_or_thresholds;
+    $sequence .= ":" . $feature_threshold_combo;
+    return $self->{_entropy_cache}->{$sequence}  if exists $self->{_entropy_cache}->{$sequence};
+    my @copy_of_array_of_features_and_values_or_thresholds = 
+                                       @{deep_copy_array(\@array_of_features_and_values_or_thresholds)};
+    push @copy_of_array_of_features_and_values_or_thresholds, $feature_threshold_combo;
+    my $entropy = 0;
+    foreach my $class_name (@{$self->{_class_names}}) {
+        my $log_prob = undef;
+        my $prob = $self->probability_of_a_class_given_sequence_of_features_and_values_or_thresholds(
+                                   $class_name, \@copy_of_array_of_features_and_values_or_thresholds);
+        if ($prob >= 0.0001 && $prob <= 0.999) {
+            $log_prob = log($prob) / log(2.0);
+        } elsif ($prob < 0.0001) {
+            $log_prob = 0;
+        } elsif ($prob > 0.999) {
+            $log_prob = 0;
         } else {
-            $probability *= $self->probability_for_feature_value_given_class(
-                                       $feature, $value, $class);
+            die "An error has occurred in log_prob calculation";
         }
+        $entropy +=  -1.0 * $prob * $log_prob;
     }
-    $self->{_probability_cache}->{$sequence_with_class} = $probability;
-    return $probability;
+    if (abs($entropy) < 0.0000001) {
+        $entropy = 0.0;
+    }
+    $self->{_entropy_cache}->{$sequence} = $entropy;
+    return $entropy;
 }
 
-sub probability_of_a_sequence_of_features_and_values {
+sub class_entropy_for_a_given_sequence_of_features_and_values_or_thresholds {
     my $self = shift;
-    my @array_of_features_and_values = @_;
-    my $sequence = join ':', @array_of_features_and_values;
-    return $self->{_probability_cache}->{$sequence}
-        if exists $self->{_probability_cache}->{$sequence};
-    my $probability;
-    foreach my $feature_and_value (@array_of_features_and_values) {    
-        my ($feature, $value) = $feature_and_value =~/(.+)=>(.+)/;
-        if (!defined $probability) {
-            $probability = 
-               $self->probability_for_feature_value($feature, $value);
-            next;
+    my $array_of_features_and_values_or_thresholds = shift;
+    my @array_of_features_and_values_or_thresholds = @$array_of_features_and_values_or_thresholds;
+    my $sequence = join ":", @array_of_features_and_values_or_thresholds;
+    return $self->{_entropy_cache}->{$sequence}  if exists $self->{_entropy_cache}->{$sequence};
+    my $entropy = 0;
+    foreach my $class_name (@{$self->{_class_names}}) {
+        my $log_prob = undef;
+        my $prob = $self->probability_of_a_class_given_sequence_of_features_and_values_or_thresholds(
+                                             $class_name, \@array_of_features_and_values_or_thresholds);
+        if ($prob >= 0.0001 && $prob <= 0.999) {
+            $log_prob = log($prob) / log(2.0);
+        } elsif ($prob < 0.0001) {
+            $log_prob = 0;
+        } elsif ($prob > 0.999) {
+            $log_prob = 0;
         } else {
-            $probability *= 
-                  $self->probability_for_feature_value($feature, $value);
+            die "An error has occurred in log_prob calculation";
         }
+        $entropy +=  -1.0 * $prob * $log_prob;
     }
-
-    $self->{_probability_cache}->{$sequence} = $probability;
-
-    return $probability;
+    if (abs($entropy) < 0.0000001) {
+        $entropy = 0.0;
+    }
+    $self->{_entropy_cache}->{$sequence} = $entropy;
+    return $entropy;
 }
 
-# argument order:  class_name, feature_name, feature_value
-sub probability_for_a_class_given_feature_value {
-    my $self = shift;
-    my $class = shift;
-    my $feature = shift;
-    my $value = shift;
-    my $prob = 
-      $self->probability_for_feature_value_given_class($feature,$value,$class);
-    my $answer = ($prob * $self->prior_probability_for_class($class)) 
-                 /
-                 $self->probability_for_feature_value($feature,$value);
-    return $answer;
-}
 
-sub probability_for_feature_value {
-    my $self = shift;
-    my $feature = shift;
-    my $value = shift;
-    my $feature_and_value = "$feature=>$value";
-    return $self->{_probability_cache}->{$feature_and_value}
-        if exists $self->{_probability_cache}->{$feature_and_value};
-    my @values_for_feature = @{$self->{_features_and_values_hash}->{$feature}};
-    @values_for_feature = map {"$feature=>" . $_} @values_for_feature;
-    my @value_counts = (0) x @values_for_feature;
-    foreach my $sample (sort {sample_index($a) <=> sample_index($b)}
-                                    keys %{$self->{_training_data_hash}}) {
-        my @features_and_values = @{$self->{_training_data_hash}->{$sample}};
-        foreach my $i (0..@values_for_feature-1) {
-            foreach my $current_value (@features_and_values) {
-                $value_counts[$i]++ 
-                  if $values_for_feature[$i] eq $current_value;
-            }
-        }
-    }
-    my $total_count = keys %{$self->{_training_data_hash}};
-    foreach my $i (0..@values_for_feature-1) {
-        $self->{_probability_cache}->{$values_for_feature[$i]} = 
-                           $value_counts[$i] / (1.0 * $total_count);
-    }
-    if (exists $self->{_probability_cache}->{$feature_and_value}) {
-            return $self->{_probability_cache}->{$feature_and_value};
-    } else {
-        return 0;
-    }
-}
-
-# argument order:  feature_name, feature_value, class_name
-sub probability_for_feature_value_given_class {
-    my $self = shift;
-    my $feature = shift;
-    my $feature_value = shift;
-    my $class_name = shift;
-    my $feature_value_class = "$feature=>$feature_value" . '::' . $class_name;
-    return $self->{_probability_cache}->{$feature_value_class}
-        if exists $self->{_probability_cache}->{$feature_value_class};
-    my @samples_for_class;
-    foreach my $sample_name (keys %{$self->{_samples_class_label_hash}}) {
-        push @samples_for_class, $sample_name 
-          if $self->{_samples_class_label_hash}->{$sample_name} eq $class_name;
-    }
-    my @values_for_feature = @{$self->{_features_and_values_hash}->{$feature}};
-    @values_for_feature = map {"$feature=>" . $_} @values_for_feature;
-    my @value_counts = (0) x @values_for_feature;
-    foreach my $sample (@samples_for_class) {
-        my @features_and_values = @{$self->{_training_data_hash}->{$sample}};
-        foreach my $i (0..@values_for_feature-1) {
-            foreach my $current_value (@features_and_values) {
-                $value_counts[$i]++ 
-                  if $values_for_feature[$i] eq $current_value;
-            }
-        }
-    }
-    my $total_count = 0;
-    foreach my $i (0..@values_for_feature-1) {    
-        $total_count += $value_counts[$i];
-    }
-    die "\n\nSomething is wrong with your training file.  It contains no training samples for Class $class_name and Feature $feature\n" if $total_count == 0;
-    # We normalize by $total_count because the probabilities are conditioned on
-    # a given class
-    foreach my $i (0..@values_for_feature-1) {
-        my $feature_and_value_for_class = 
-                         $values_for_feature[$i] . '::' . $class_name;
-        $self->{_probability_cache}->{$feature_and_value_for_class} = 
-                                $value_counts[$i] / (1.0 * $total_count);
-    }
-    if (exists $self->{_probability_cache}->{$feature_value_class}) {
-        return $self->{_probability_cache}->{$feature_value_class};
-    else:
-        return 0
-    }
-}
+#####################################   Probability Calculators   ########################################
 
 sub prior_probability_for_class {
     my $self = shift;
@@ -608,7 +886,6 @@ sub prior_probability_for_class {
         if exists $self->{_probability_cache}->{$class_name_in_cache};
     my $total_num_of_samples = keys %{$self->{_samples_class_label_hash}};
     my @values = values %{$self->{_samples_class_label_hash}};
-
     foreach my $class_name (@{$self->{_class_names}}) {
         my @trues = grep {$_ eq $class_name} @values;
         my $prior_for_this_class = (1.0 * @trues) / $total_num_of_samples; 
@@ -619,30 +896,759 @@ sub prior_probability_for_class {
     return $self->{_probability_cache}->{$class_name_in_cache};
 }
 
-###################  Data Condition Calculator  ###################
-
-sub determine_data_condition {
+sub calculate_class_priors {
     my $self = shift;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my @features = keys %features_and_values_hash;
-    my @values = values %features_and_values_hash;
-    my @class_names = @{$self->{_class_names}};
-
-    my $num_of_features = @features;
-    print "Number of features: $num_of_features\n\n";
-
-    my $max_num_values;
-    foreach my $i (0..@values-1) {
-        if ((!defined $max_num_values) || (@{$values[$i]} > $max_num_values)){
-            $max_num_values = @{$values[$i]};
+    return if scalar keys %{$self->{_class_priors_hash}} > 1;
+    foreach my $class_name (@{$self->{_class_names}}) {
+        my $class_name_in_cache = "prior::$class_name";
+        my $total_num_of_samples = scalar keys %{$self->{_samples_class_label_hash}};
+        my @all_values = values %{$self->{_samples_class_label_hash}};
+        my @trues_for_this_class = grep {$_ eq $class_name} @all_values;
+        my $prior_for_this_class = (1.0 * (scalar @trues_for_this_class)) / $total_num_of_samples;
+        $self->{_class_priors_hash}->{$class_name} = $prior_for_this_class;
+        my $this_class_name_in_cache = "prior::$class_name";
+        $self->{_probability_cache}->{$this_class_name_in_cache} = $prior_for_this_class;
+    }
+    if ($self->{_debug1}) {
+        foreach my $class (sort keys %{$self->{_class_priors_hash}}) {
+            print "$class  =>  $self->{_class_priors_hash}->{$class}\n";
         }
     }
-    print "Largest number of feature values is: $max_num_values\n";
-    my $estimated_number_of_nodes = $max_num_values ** @features;
-    print "\nWORST CASE SCENARIO: The decision tree COULD have as many as   \n   $estimated_number_of_nodes nodes. The exact number of nodes created depends\n   critically on the entropy_threshold used for node expansion (the default\n   value for this threshold is 0.01) and on the value set for\n   max_depth_desired for the depth of the tree\n";
+}
+
+sub calculate_first_order_probabilities {
+    my $self = shift;
+    foreach my $feature (@{$self->{_feature_names}}) {
+        $self->probability_of_feature_value($feature, undef); 
+        if ($self->{_debug2}) {
+            if (exists $self->{_prob_distribution_numeric_features_hash}->{$feature}) {
+                print "\nPresenting probability distribution for a numeric feature:\n";
+                foreach my $sampling_point (sort {$a <=> $b} keys 
+                                   %{$self->{_prob_distribution_numeric_features_hash}->{$feature}}) {
+                    my $sampling_pt_for_display = sprintf("%.2f", $sampling_point);
+                    print "$feature :: $sampling_pt_for_display=" . sprintf("%.5f", 
+                          $self->{_prob_distribution_numeric_features_hash}->{$feature}{$sampling_point}) . "\n";
+                }
+            } else {
+                print "\nPresenting probabilities for the values of a feature considered to be symbolic:\n";
+                my @values_for_feature = @{$self->{_features_and_unique_values_hash}->{$feature}};
+                foreach my $value (sort @values_for_feature) {
+                    my $prob = $self->probability_of_feature_value($feature,$value); 
+                    print "$feature :: $value = " . sprintf("%.5f", $prob) . "\n";
+                }
+            }
+        }
+    }
+}
+
+sub probability_of_feature_value {
+    my $self = shift;
+    my $feature_name = shift;
+    my $value = shift;
+    $value = sprintf("%.1f", $value) if defined($value) && $value =~ /^\d+$/;
+    if (defined($value) && exists($self->{_sampling_points_for_numeric_feature_hash}->{$feature_name})) {
+        $value = closest_sampling_point($value, 
+                                        $self->{_sampling_points_for_numeric_feature_hash}->{$feature_name});
+    }
+    my $feature_and_value;
+    if (defined($value)) {
+        $feature_and_value = "$feature_name=$value";
+    }
+    if (defined($value) && exists($self->{_probability_cache}->{$feature_and_value})) {
+        print "\nRETURNED by cache for feature $feature_name and value $value\n" if $self->{_debug2};
+        return $self->{_probability_cache}->{$feature_and_value};
+    }
+    my ($histogram_delta, $num_of_histogram_bins, @valuerange, $diffrange) = (undef,undef,undef,undef);
+    if (exists $self->{_numeric_features_valuerange_hash}->{$feature_name}) {
+        if ($self->{_feature_values_how_many_uniques_hash}->{$feature_name} > 
+                                $self->{_symbolic_to_numeric_cardinality_threshold}) {
+            if (! exists $self->{_sampling_points_for_numeric_feature_hash}->{$feature_name}) {
+                @valuerange = @{$self->{_numeric_features_valuerange_hash}->{$feature_name}}; 
+                $diffrange = $valuerange[1] - $valuerange[0];
+                my %seen = ();
+                my @unique_values_for_feature =  sort {$a <=> $b}  grep {$_ if $_ ne 'NA' && !$seen{$_}++} 
+                                         @{$self->{_features_and_values_hash}->{$feature_name}};
+                my @diffs = sort {$a <=> $b} map {$unique_values_for_feature[$_] - 
+                                    $unique_values_for_feature[$_-1]}  1..@unique_values_for_feature-1;
+                my $median_diff = $diffs[int(@diffs/2) - 1];
+                $histogram_delta =  $median_diff * 2;
+                $self->{_histogram_delta_hash}->{$feature_name} = $histogram_delta;
+                $num_of_histogram_bins = int($diffrange / $histogram_delta) + 1;
+
+                $self->{_num_of_histogram_bins_hash}->{$feature_name} = $num_of_histogram_bins;
+                my @sampling_points_for_feature = map {$valuerange[0] + $histogram_delta * $_} 
+                                                                    0..$num_of_histogram_bins-1;
+                @sampling_points_for_feature = map {sprintf("%.5f", $_)} @sampling_points_for_feature;
+
+                $self->{_sampling_points_for_numeric_feature_hash}->{$feature_name} = 
+                                                                           \@sampling_points_for_feature;
+            }
+        }
+    }
+    if (exists $self->{_numeric_features_valuerange_hash}->{$feature_name}) {
+        if ($self->{_feature_values_how_many_uniques_hash}->{$feature_name} > 
+                                   $self->{_symbolic_to_numeric_cardinality_threshold}) {
+            my @sampling_points_for_feature = 
+                               @{$self->{_sampling_points_for_numeric_feature_hash}->{$feature_name}};
+            my @counts_at_sampling_points = (0) x @sampling_points_for_feature;
+            my @actual_values_for_feature = grep {$_ ne 'NA'} 
+                                              @{$self->{_features_and_values_hash}->{$feature_name}};
+            foreach my $i (0..@sampling_points_for_feature-1) {
+                foreach my $j (0..@actual_values_for_feature-1) {
+                    if (abs($sampling_points_for_feature[$i]-$actual_values_for_feature[$j]) < $histogram_delta) {
+                        $counts_at_sampling_points[$i]++
+                    }
+                }
+            }
+            my $total_counts = 0;
+            map {$total_counts += $_} @counts_at_sampling_points;
+            my @probs = map {$_ / (1.0 * $total_counts)} @counts_at_sampling_points;
+            my %bin_prob_hash = ();
+            foreach my $i (0..@sampling_points_for_feature-1) {
+                my $display_i = sprintf("%.5f", $i) if $i =~ /^\d+$/;
+                $bin_prob_hash{$display_i} = $probs[$i];
+            }
+            $self->{_prob_distribution_numeric_features_hash}->{$feature_name} = \%bin_prob_hash;
+            my @values_for_feature = map "$feature_name=$_", map {sprintf("%.5f", $_)} 
+                                                                    @sampling_points_for_feature;
+            foreach my $i (0..@values_for_feature-1) {
+                $self->{_probability_cache}->{$values_for_feature[$i]} = $probs[$i];
+            }
+            if (defined($value) && exists $self->{_probability_cache}->{$feature_and_value}) {
+                return $self->{_probability_cache}->{$feature_and_value};
+            } else {
+                return 0;
+            }
+        } else {
+            # This section is for numeric features that will be treated symbolically
+            my %seen = ();
+            my @values_for_feature = grep {$_ if $_ ne 'NA' && !$seen{$_}++} 
+                                                 @{$self->{_features_and_values_hash}->{$feature_name}};
+            @values_for_feature = map {"$feature_name=$_"} @values_for_feature;
+            my @value_counts = (0) x @values_for_feature;
+
+            foreach my $sample (sort {sample_index($a) cmp sample_index($b)} keys $self->{_training_data_hash}) {
+                my @features_and_values = @{$self->{_training_data_hash}->{$sample}};
+                foreach my $i (0..@values_for_feature-1) {
+                    foreach my $current_value (@features_and_values) {
+                        $value_counts[$i]++ if $values_for_feature[$i] eq $current_value;
+                    }
+                }
+            }
+            my $total_counts = 0;
+            map {$total_counts += $_} @value_counts;
+            die "PFV Something is wrong with your training file. It contains no training samples \
+                         for feature named $feature_name" if $total_counts == 0;
+            my @probs = map {$_ / (1.0 * $total_counts)} @value_counts;
+            foreach my $i (0..@values_for_feature-1) {
+                $self->{_probability_cache}->{$values_for_feature[$i]} = $probs[$i];
+            }
+            if (defined($value) && exists $self->{_probability_cache}->{$feature_and_value}) {
+                return $self->{_probability_cache}->{$feature_and_value};
+            } else {
+                return 0;
+            }
+        }
+    } else {
+        # This section is only for purely symbolic features:  
+        my @values_for_feature = @{$self->{_features_and_values_hash}->{$feature_name}};        
+        @values_for_feature = map {"$feature_name=$_"} @values_for_feature;
+        my @value_counts = (0) x @values_for_feature;
+        foreach my $sample (sort {sample_index($a) cmp sample_index($b)} keys %{$self->{_training_data_hash}}) {
+            my @features_and_values = @{$self->{_training_data_hash}->{$sample}};
+            foreach my $i (0..@values_for_feature-1) {
+                for my $current_value (@features_and_values) {
+                    $value_counts[$i]++ if $values_for_feature[$i] eq $current_value;
+                }
+            }
+        }
+        foreach my $i (0..@values_for_feature-1) {
+            $self->{_probability_cache}->{$values_for_feature[$i]} = 
+                $value_counts[$i] / (1.0 * scalar(keys %{$self->{_training_data_hash}}));
+        }
+        if (defined($value) && exists $self->{_probability_cache}->{$feature_and_value}) {
+            return $self->{_probability_cache}->{$feature_and_value};
+        } else {
+            return 0;
+        }
+    }
+}
+
+sub probability_of_feature_value_given_class {
+    my $self = shift;
+    my $feature_name = shift;
+    my $feature_value = shift;
+    my $class_name = shift;
+    $feature_value = sprintf("%.1f", $feature_value) if defined($feature_value) && $feature_value =~ /^\d+$/;
+    if (defined($feature_value) && exists($self->{_sampling_points_for_numeric_feature_hash}->{$feature_name})) {
+        $feature_value = closest_sampling_point($feature_value, 
+                                        $self->{_sampling_points_for_numeric_feature_hash}->{$feature_name});
+    }
+    my $feature_value_class;
+    if (defined($feature_value)) {
+        $feature_value_class = "$feature_name=$feature_value" . "::" . "$class_name";
+    }
+    if (defined($feature_value) && exists($self->{_probability_cache}->{$feature_value_class})) {
+        print "\nNext answer returned by cache for feature $feature_name and " .
+            "value $feature_value given class $class_name\n" if $self->{_debug2};
+        return $self->{_probability_cache}->{$feature_value_class};
+    }
+    my ($histogram_delta, $num_of_histogram_bins, @valuerange, $diffrange) = (undef,undef,undef,undef);
+
+    if (exists $self->{_numeric_features_valuerange_hash}->{$feature_name}) {
+        if ($self->{_feature_values_how_many_uniques_hash}->{$feature_name} > 
+                                $self->{_symbolic_to_numeric_cardinality_threshold}) {
+            $histogram_delta = $self->{_histogram_delta_hash}->{$feature_name};
+            $num_of_histogram_bins = $self->{_num_of_histogram_bins_hash}->{$feature_name};
+            @valuerange = @{$self->{_numeric_features_valuerange_hash}->{$feature_name}};
+            $diffrange = $valuerange[1] - $valuerange[0];
+        }
+    }
+    my @samples_for_class = ();
+    # Accumulate all samples names for the given class:
+    foreach my $sample_name (keys %{$self->{_samples_class_label_hash}}) {
+        if ($self->{_samples_class_label_hash}->{$sample_name} eq $class_name) {
+            push @samples_for_class, $sample_name;
+        }
+    }
+    if (exists($self->{_numeric_features_valuerange_hash}->{$feature_name})) {
+        if ($self->{_feature_values_how_many_uniques_hash}->{$feature_name} > 
+                                $self->{_symbolic_to_numeric_cardinality_threshold}) {
+            my @sampling_points_for_feature = 
+                              @{$self->{_sampling_points_for_numeric_feature_hash}->{$feature_name}};
+            my @counts_at_sampling_points = (0) x @sampling_points_for_feature;
+            my @actual_feature_values_for_samples_in_class = ();
+            foreach my $sample (@samples_for_class) {           
+                foreach my $feature_and_value (@{$self->{_training_data_hash}->{$sample}}) {
+                    my $pattern = '(.+)=(.+)';
+                    $feature_and_value =~ /$pattern/;
+                    my ($feature, $value) = ($1, $2);
+                    if (($feature eq $feature_name) && ($value ne 'NA')) {
+                        push @actual_feature_values_for_samples_in_class, $value;
+                    }
+                }
+            }
+            foreach my $i (0..@sampling_points_for_feature-1) {
+                foreach my $j (0..@actual_feature_values_for_samples_in_class-1) {
+                    if (abs($sampling_points_for_feature[$i] - 
+                            $actual_feature_values_for_samples_in_class[$j]) < $histogram_delta) {
+                        $counts_at_sampling_points[$i]++;
+                    }
+                }
+            }
+            my $total_counts = 0;
+            map {$total_counts += $_} @counts_at_sampling_points;
+            die "PFVC1 Something is wrong with your training file. It contains no training " .
+                    "samples for Class $class_name and Feature $feature_name" if $total_counts == 0;
+            my @probs = map {$_ / (1.0 * $total_counts)} @counts_at_sampling_points;
+            my @values_for_feature_and_class = map {"$feature_name=$_" . "::" . "$class_name"} 
+                                                                     @sampling_points_for_feature;
+            foreach my $i (0..@values_for_feature_and_class-1) {
+                $self->{_probability_cache}->{$values_for_feature_and_class[$i]} = $probs[$i];
+            }
+            if (exists $self->{_probability_cache}->{$feature_value_class}) {
+                return $self->{_probability_cache}->{$feature_value_class};
+            } else {
+                return 0;
+            }
+        } else {
+            # This section is for numeric features that will be treated symbolically
+            my %seen = ();
+            my @values_for_feature = grep {$_ if $_ ne 'NA' && !$seen{$_}++} 
+                                                 @{$self->{_features_and_values_hash}->{$feature_name}};
+            @values_for_feature = map {"$feature_name=$_"} @values_for_feature;
+            my @value_counts = (0) x @values_for_feature;
+            foreach my $sample (@samples_for_class) {
+                my @features_and_values = @{$self->{_training_data_hash}->{$sample}};
+                foreach my $i (0..@values_for_feature-1) {
+                    foreach my $current_value (@features_and_values) {
+                        $value_counts[$i]++ if $values_for_feature[$i] eq $current_value;
+                    }
+                }
+            }
+            my $total_counts = 0;
+            map {$total_counts += $_} @value_counts;
+            die "PFVC2 Something is wrong with your training file. It contains no training " .
+                "samples for Class $class_name and Feature $feature_name" if $total_counts == 0;
+            # We normalize by total_count because the probabilities are conditioned on a given class
+            foreach my $i (0..@values_for_feature-1) {
+                my $feature_and_value_and_class =  "$values_for_feature[$i]" . "::" . "$class_name";
+                $self->{_probability_cache}->{$feature_and_value_and_class} = 
+                                                           $value_counts[$i] / (1.0 * $total_counts);
+            }
+            if (exists $self->{_probability_cache}->{$feature_value_class}) {
+                return $self->{_probability_cache}->{$feature_value_class};
+            } else {
+                return 0;
+            }
+        }
+    } else {
+        # This section is for purely symbolic features
+        my @values_for_feature = @{$self->{_features_and_values_hash}->{$feature_name}};
+        my %seen = ();
+        @values_for_feature = grep {$_ if $_ ne 'NA' && !$seen{$_}++} 
+                                             @{$self->{_features_and_values_hash}->{$feature_name}};
+        @values_for_feature = map {"$feature_name=$_"} @values_for_feature;
+        my @value_counts = (0) x @values_for_feature;
+        foreach my $sample (@samples_for_class) {
+            my @features_and_values = @{$self->{_training_data_hash}->{$sample}};
+            foreach my $i (0..@values_for_feature-1) {
+                foreach my $current_value (@features_and_values) {
+                    $value_counts[$i]++ if $values_for_feature[$i] eq $current_value;
+                }
+            }
+        }
+        my $total_counts = 0;
+        map {$total_counts += $_} @value_counts;
+        die "PFVC2 Something is wrong with your training file. It contains no training " .
+            "samples for Class $class_name and Feature $feature_name" if $total_counts == 0;
+        # We normalize by total_count because the probabilities are conditioned on a given class
+        foreach my $i (0..@values_for_feature-1) {
+            my $feature_and_value_and_class =  "$values_for_feature[$i]" . "::" . "$class_name";
+            $self->{_probability_cache}->{$feature_and_value_and_class} = 
+                                                       $value_counts[$i] / (1.0 * $total_counts);
+        }
+        if (exists $self->{_probability_cache}->{$feature_value_class}) {
+            return $self->{_probability_cache}->{$feature_value_class};
+        } else {
+            return 0;
+        }
+    }
+}
+
+sub probability_of_feature_less_than_threshold {
+    my $self = shift;
+    my $feature_name = shift;
+    my $threshold = shift;
+    my $feature_threshold_combo = "$feature_name" . '<' . "$threshold";
+    return $self->{_probability_cache}->{$feature_threshold_combo}
+                     if (exists $self->{_probability_cache}->{$feature_threshold_combo});
+    my @all_values = grep {$_ if $_ ne 'NA'} @{$self->{_features_and_values_hash}->{$feature_name}};
+    my @all_values_less_than_threshold = grep {$_ if $_ <= $threshold} @all_values;
+    my $probability = (1.0 * @all_values_less_than_threshold) / @all_values;
+    $self->{_probability_cache}->{$feature_threshold_combo} = $probability;
+    return $probability;
+}
+
+sub probability_of_feature_less_than_threshold_given_class {
+    my $self = shift;
+    my $feature_name = shift;
+    my $threshold = shift;
+    my $class_name = shift;
+    my $feature_threshold_class_combo = "$feature_name" . "<" . "$threshold" . "::" . "$class_name";
+    return $self->{_probability_cache}->{$feature_threshold_class_combo}
+                     if (exists $self->{_probability_cache}->{$feature_threshold_class_combo});
+    my @data_samples_for_class = ();
+    # Accumulate all samples names for the given class:
+    foreach my $sample_name (keys %{$self->{_samples_class_label_hash}}) {
+        push @data_samples_for_class, $sample_name 
+                  if $self->{_samples_class_label_hash}->{$sample_name} eq $class_name;
+    }
+    my @actual_feature_values_for_samples_in_class = ();
+    foreach my $sample (@data_samples_for_class) {
+        foreach my $feature_and_value (@{$self->{_training_data_hash}->{$sample}}) {
+            my $pattern = '(.+)=(.+)';
+            $feature_and_value =~ /$pattern/;
+            my ($feature,$value) = ($1,$2);
+            push @actual_feature_values_for_samples_in_class, $value
+                                    if $feature eq $feature_name && $value ne 'NA';
+        }
+    }
+    my @actual_points_for_feature_less_than_threshold = grep {$_ if $_ <= $threshold}
+                                                    @actual_feature_values_for_samples_in_class;
+    my $probability = (1.0 * @actual_points_for_feature_less_than_threshold) / 
+                                                    @actual_feature_values_for_samples_in_class;
+    $self->{_probability_cache}->{$feature_threshold_class_combo} = $probability;
+    return $probability;
+}
+
+
+# This method requires that all truly numeric types only be expressed as '<' or '>'
+# constructs in the array of branch features and thresholds
+sub probability_of_a_sequence_of_features_and_values_or_thresholds {
+    my $self = shift;
+    my $arr = shift;
+    my @array_of_features_and_values_or_thresholds = @$arr;
+    return if scalar @array_of_features_and_values_or_thresholds == 0;
+    my $sequence = join ':', @array_of_features_and_values_or_thresholds;
+    return $self->{_probability_cache}->{$sequence} if exists $self->{_probability_cache}->{$sequence};
+    my $probability = undef;
+    my $pattern1 = '(.+)=(.+)';
+    my $pattern2 = '(.+)<(.+)';
+    my $pattern3 = '(.+)>(.+)';
+    my @true_numeric_types = ();
+    my @true_numeric_types_feature_names = ();
+    my @symbolic_types = ();
+    my @symbolic_types_feature_names = ();
+    foreach my $item (@array_of_features_and_values_or_thresholds) {
+        if ($item =~ /$pattern2/) {
+            push @true_numeric_types, $item;
+            my ($feature,$value) = ($1,$2);
+            push @true_numeric_types_feature_names, $feature;
+        } elsif ($item =~ /$pattern3/) {
+            push @true_numeric_types, $item;
+            my ($feature,$value) = ($1,$2);
+            push @true_numeric_types_feature_names, $feature;
+        } else {
+            push @symbolic_types, $item;
+            $item =~ /$pattern1/;
+            my ($feature,$value) = ($1,$2);
+            push @symbolic_types_feature_names, $feature;
+        }
+    }
+    my %seen1 = ();
+    @true_numeric_types_feature_names = grep {$_ if !$seen1{$_}++} @true_numeric_types_feature_names;
+    my %seen2 = ();
+    @symbolic_types_feature_names = grep {$_ if !$seen2{$_}++} @symbolic_types_feature_names;
+    my $bounded_intervals_numeric_types = $self->find_bounded_intervals_for_numeric_features(\@true_numeric_types);
+    print_array_with_msg("POS: Answer returned by find_bounded: ", 
+                                       $bounded_intervals_numeric_types) if $self->{_debug2};
+    # Calculate the upper and the lower bounds to be used when searching for the best
+    # threshold for each of the numeric features that are in play at the current node:
+    my (%upperbound, %lowerbound);
+    foreach my $feature_name (@true_numeric_types_feature_names) {
+        $upperbound{$feature_name} = undef;
+        $lowerbound{$feature_name} = undef;
+    }
+    foreach my $item (@$bounded_intervals_numeric_types) {
+        foreach my $feature_grouping (@$item) {
+            if ($feature_grouping->[1] eq '>') {
+                $lowerbound{$feature_grouping->[0]} = $feature_grouping->[2];
+            } else {
+                $upperbound{$feature_grouping->[0]} = $feature_grouping->[2];
+            }
+        }
+    }
+    foreach my $feature_name (@true_numeric_types_feature_names) {
+        if ($lowerbound{$feature_name} && $upperbound{$feature_name} && 
+                          $upperbound{$feature_name} <= $lowerbound{$feature_name}) { 
+            return 0;
+        } elsif ($lowerbound{$feature_name} && $upperbound{$feature_name}) {
+            if (! $probability) {
+                $probability = $self->probability_of_feature_less_than_threshold($feature_name, 
+                                                                                 $upperbound{$feature_name}) -
+                   $self->probability_of_feature_less_than_threshold($feature_name, $lowerbound{$feature_name});
+            } else {
+                $probability *= ($self->probability_of_feature_less_than_threshold($feature_name, 
+                                                                                   $upperbound{$feature_name}) -
+                 $self->probability_of_feature_less_than_threshold($feature_name, $lowerbound{$feature_name}))
+            }
+        } elsif ($upperbound{$feature_name} && ! $lowerbound{$feature_name}) {
+            if (! $probability) {
+                $probability = $self->probability_of_feature_less_than_threshold($feature_name,
+                                                                                 $upperbound{$feature_name});
+            } else {
+                $probability *= $self->probability_of_feature_less_than_threshold($feature_name, 
+                                                                                  $upperbound{$feature_name});
+            }
+        } elsif ($lowerbound{$feature_name} && ! $upperbound{$feature_name}) {
+            if (! $probability) {
+                $probability = 1.0 - $self->probability_of_feature_less_than_threshold($feature_name,
+                                                                                 $lowerbound{$feature_name});
+            } else {
+                $probability *= (1.0 - $self->probability_of_feature_less_than_threshold($feature_name, 
+                                                                                $lowerbound{$feature_name}));
+            }
+        } else {
+            die("Ill formatted call to 'probability_of_sequence' method");
+        }
+    }
+    foreach my $feature_and_value (@symbolic_types) {
+        if ($feature_and_value =~ /$pattern1/) {
+            my ($feature,$value) = ($1,$2);
+            if (! $probability) {        
+                $probability = $self->probability_of_feature_value($feature, $value);
+            } else {
+                $probability *= $self->probability_of_feature_value($feature, $value);
+            }
+        }
+    }
+    $self->{_probability_cache}->{$sequence} = $probability;
+    return $probability;
+}
+
+
+##  The following method requires that all truly numeric types only be expressed as
+##  '<' or '>' constructs in the array of branch features and thresholds
+sub probability_of_a_sequence_of_features_and_values_or_thresholds_given_class {
+    my $self = shift;
+    my $arr = shift;
+    my $class_name = shift;
+    my @array_of_features_and_values_or_thresholds = @$arr;
+    return if scalar @array_of_features_and_values_or_thresholds == 0;
+    my $sequence = join ':', @array_of_features_and_values_or_thresholds;
+    my $sequence_with_class = "$sequence" . "::" . $class_name;
+    return $self->{_probability_cache}->{$sequence_with_class} 
+                      if exists $self->{_probability_cache}->{$sequence_with_class};
+    my $probability = undef;
+    my $pattern1 = '(.+)=(.+)';
+    my $pattern2 = '(.+)<(.+)';
+    my $pattern3 = '(.+)>(.+)';
+    my @true_numeric_types = ();
+    my @true_numeric_types_feature_names = ();
+    my @symbolic_types = ();
+    my @symbolic_types_feature_names = ();
+    foreach my $item (@array_of_features_and_values_or_thresholds) {
+        if ($item =~ /$pattern2/) {
+            push @true_numeric_types, $item;
+            my ($feature,$value) = ($1,$2);
+            push @true_numeric_types_feature_names, $feature;
+        } elsif ($item =~ /$pattern3/) {
+            push @true_numeric_types, $item;
+            my ($feature,$value) = ($1,$2);
+            push @true_numeric_types_feature_names, $feature;
+        } else {
+            push @symbolic_types, $item;
+            $item =~ /$pattern1/;
+            my ($feature,$value) = ($1,$2);
+            push @symbolic_types_feature_names, $feature;
+        }
+    }
+    my %seen1 = ();
+    @true_numeric_types_feature_names = grep {$_ if !$seen1{$_}++} @true_numeric_types_feature_names;
+    my %seen2 = ();
+    @symbolic_types_feature_names = grep {$_ if !$seen2{$_}++} @symbolic_types_feature_names;
+    my $bounded_intervals_numeric_types = $self->find_bounded_intervals_for_numeric_features(\@true_numeric_types);
+    print_array_with_msg("POSC: Answer returned by find_bounded: ", 
+                                       $bounded_intervals_numeric_types) if $self->{_debug2};
+    # Calculate the upper and the lower bounds to be used when searching for the best
+    # threshold for each of the numeric features that are in play at the current node:
+    my (%upperbound, %lowerbound);
+    foreach my $feature_name (@true_numeric_types_feature_names) {
+        $upperbound{$feature_name} = undef;
+        $lowerbound{$feature_name} = undef;
+    }
+    foreach my $item (@$bounded_intervals_numeric_types) {
+        foreach my $feature_grouping (@$item) {
+            if ($feature_grouping->[1] eq '>') {
+                $lowerbound{$feature_grouping->[0]} = $feature_grouping->[2];
+            } else {
+                $upperbound{$feature_grouping->[0]} = $feature_grouping->[2];
+            }
+        }
+    }
+    foreach my $feature_name (@true_numeric_types_feature_names) {
+        if ($lowerbound{$feature_name} && $upperbound{$feature_name} && 
+                          $upperbound{$feature_name} <= $lowerbound{$feature_name}) { 
+            return 0;
+        } elsif ($lowerbound{$feature_name} && $upperbound{$feature_name}) {
+            if (! $probability) {
+
+                $probability =   $self->probability_of_feature_less_than_threshold_given_class($feature_name, 
+                                                               $upperbound{$feature_name}, $class_name) -
+                                 $self->probability_of_feature_less_than_threshold_given_class($feature_name, 
+                                                               $lowerbound{$feature_name}, $class_name);
+            } else {
+                $probability *= ($self->probability_of_feature_less_than_threshold_given_class($feature_name, 
+                                                               $upperbound{$feature_name}, $class_name) -
+                                 $self->probability_of_feature_less_than_threshold_given_class($feature_name, 
+                                                               $lowerbound{$feature_name}, $class_name))
+            }
+        } elsif ($upperbound{$feature_name} && ! $lowerbound{$feature_name}) {
+            if (! $probability) {
+                $probability =   $self->probability_of_feature_less_than_threshold_given_class($feature_name,
+                                                               $upperbound{$feature_name}, $class_name);
+            } else {
+                $probability *=  $self->probability_of_feature_less_than_threshold_given_class($feature_name, 
+                                                               $upperbound{$feature_name}, $class_name);
+            }
+
+        } elsif ($lowerbound{$feature_name} && ! $upperbound{$feature_name}) {
+            if (! $probability) {
+                $probability =   1.0 - $self->probability_of_feature_less_than_threshold_given_class($feature_name,
+                                                               $lowerbound{$feature_name}, $class_name);
+            } else {
+                $probability *= (1.0 - $self->probability_of_feature_less_than_threshold_given_class($feature_name,
+                                                               $lowerbound{$feature_name}, $class_name));
+            }
+        } else {
+            die("Ill formatted call to 'probability of sequence given class' method");
+        }
+    }
+    foreach my $feature_and_value (@symbolic_types) {
+        if ($feature_and_value =~ /$pattern1/) {
+            my ($feature,$value) = ($1,$2);
+            if (! $probability) {        
+                $probability = $self->probability_of_feature_value_given_class($feature, $value, $class_name);
+            } else {
+                $probability *= $self->probability_of_feature_value_given_class($feature, $value, $class_name);
+            }
+        }
+    }
+    $self->{_probability_cache}->{$sequence_with_class} = $probability;
+    return $probability;
+}
+
+sub probability_of_a_class_given_sequence_of_features_and_values_or_thresholds {
+    my $self = shift;
+    my $class_name = shift;    
+    my $arr = shift;
+    my @array_of_features_and_values_or_thresholds = @$arr;
+    my $sequence = join ':', @array_of_features_and_values_or_thresholds;
+    my $class_and_sequence = "$class_name" . "::" . $sequence;
+    return $self->{_probability_cache}->{$class_and_sequence} 
+                      if exists $self->{_probability_cache}->{$class_and_sequence};
+    my @array_of_class_probabilities = (0) x scalar @{$self->{_class_names}};
+    foreach my $i (0..@{$self->{_class_names}}-1) {
+        my $class_name = $self->{_class_names}->[$i];
+        my $prob = $self->probability_of_a_sequence_of_features_and_values_or_thresholds_given_class(
+                                               \@array_of_features_and_values_or_thresholds, $class_name);
+        if ($prob < 0.000001) {
+            $array_of_class_probabilities[$i] = 0.0;
+            next;
+        }
+        my $prob_of_feature_sequence = $self->probability_of_a_sequence_of_features_and_values_or_thresholds(
+                                                            \@array_of_features_and_values_or_thresholds);
+        die "PCS Something is wrong with your sequence of feature values and thresholds in " .
+                "probability_of_a_class_given_sequence_of_features_and_values_or_thresholds()"
+                if ! $prob_of_feature_sequence;
+        my $prior = $self->{_class_priors_hash}->{$self->{_class_names}->[$i]};
+        $array_of_class_probabilities[$i] = $prob * $prior / $prob_of_feature_sequence;
+    }
+    my $sum_probability;
+    map {$sum_probability += $_} @array_of_class_probabilities;
+    if ($sum_probability == 0) {
+        @array_of_class_probabilities =  map {1.0 / (scalar @{$self->{_class_names}})}  
+                                                               (0..@{$self->{_class_names}}-1);
+    } else {
+        @array_of_class_probabilities = map {$_ * 1.0 / $sum_probability} @array_of_class_probabilities;
+    }
+    foreach my $i (0..@{$self->{_class_names}}-1) {
+        my $this_class_and_sequence = "$self->{_class_names}->[$i]" . "::" . "$sequence";
+        $self->{_probability_cache}->{$this_class_and_sequence} = $array_of_class_probabilities[$i];
+    }
+    return $self->{_probability_cache}->{$class_and_sequence};
+}
+
+#######################################  Class Based Utilities  ##########################################
+
+##  Given a list of branch attributes for the numeric features of the form, say,
+##  ['g2<1','g2<2','g2<3','age>34','age>36','age>37'], this method returns the
+##  smallest list that is relevant for the purpose of calculating the probabilities.
+##  To explain, the probability that the feature `g2' is less than 1 AND, at the same
+##  time, less than 2, AND, at the same time, less than 3, is the same as the
+##  probability that the feature less than 1. Similarly, the probability that 'age'
+##  is greater than 34 and also greater than 37 is the same as `age' being greater
+##  than 37.
+sub find_bounded_intervals_for_numeric_features {
+    my $self = shift;
+    my $arr = shift;    
+    my @arr = @$arr;
+    my @features = @{$self->{_feature_names}};
+    my @arr1 = map {my @x = split /(>|<)/, $_; \@x} @arr;   
+    print_array_with_msg("arr1", \@arr1) if $self->{_debug2};
+    my @arr3 = ();
+    foreach my $feature_name (@features) {
+        my @temp = ();
+        foreach my $x (@arr1) {
+            push @temp, $x if @$x > 0 && $x->[0] eq $feature_name;
+        }
+        push @arr3, \@temp if @temp > 0;
+    }
+    print_array_with_msg("arr3", \@arr3) if $self->{_debug2};
+    # Sort each list so that '<' entries occur before '>' entries:
+    my @arr4;
+    foreach my $li (@arr3) {
+        my @sorted = sort {$a->[1] cmp $b->[1]} @$li;
+        push @arr4, \@sorted;
+    }
+    print_array_with_msg("arr4", \@arr4) if $self->{_debug2};
+    my @arr5;
+    foreach my $li (@arr4) {
+        my @temp1 = ();
+        my @temp2 = ();
+        foreach my $inner (@$li) {
+            if ($inner->[1] eq '<') {
+                push @temp1, $inner;
+            } else {
+                push @temp2, $inner;
+            }
+        }
+        if (@temp1 > 0 && @temp2 > 0) {
+            push @arr5, [\@temp1, \@temp2];
+        } elsif (@temp1 > 0) {
+            push @arr5, [\@temp1];
+        } else {
+            push @arr5, [\@temp2];
+        }
+    }
+    print_array_with_msg("arr5", \@arr5) if $self->{_debug2};
+    my @arr6 = ();
+    foreach my $li (@arr5) {
+        my @temp1 = ();
+        foreach my $inner (@$li) {
+            my @sorted = sort {$a->[2] <=> $b->[2]} @$inner;
+            push @temp1, \@sorted;
+        }
+        push @arr6, \@temp1;
+    }
+    print_array_with_msg("arr6", \@arr6) if $self->{_debug2};
+    my @arr9 = ();
+    foreach my $li (@arr6) {
+        foreach my $alist (@$li) {
+            my @newalist = ();
+            if ($alist->[0][1] eq '<') {
+                push @newalist, $alist->[0];
+            } else {
+                push @newalist, $alist->[-1];
+            }
+            if ($alist->[0][1] ne $alist->[-1][1]) {
+                push @newalist, $alist->[-1];
+            }
+            push @arr9, \@newalist;
+        }
+    }
+    print_array_with_msg('arr9', \@arr9) if $self->{_debug2};
+    return \@arr9;
+
+}
+
+##  This method is used to verify that you used legal feature names in the test
+##  sample that you want to classify with the decision tree.
+sub check_names_used {
+    my $self = shift;
+    my $features_and_values_test_data = shift;
+    my @features_and_values_test_data = @$features_and_values_test_data;
+    my $pattern = '(\S+)\s*=\s*(\S+)';
+    foreach my $feature_and_value (@features_and_values_test_data) {
+        $feature_and_value =~ /$pattern/;
+        my ($feature,$value) = ($1,$2);
+        die "Your test data has formatting error" unless defined($feature) && defined($value);
+        return 0 unless contained_in($feature, @{$self->{_feature_names}});
+    }
+    return 1;
+}
+
+#######################################  Data Condition Calculator  ######################################
+
+##  This method estimates the worst-case fan-out of the decision tree taking into
+##  account the number of values (and therefore the number of branches emanating from
+##  a node) for the symbolic features.
+sub determine_data_condition {
+    my $self = shift;
+    my $num_of_features = scalar @{$self->{_feature_names}};
+    my @values = ();
+    my @number_of_values;
+    foreach my $feature (keys %{$self->{_features_and_unique_values_hash}}) {  
+        push @values, @{$self->{_features_and_unique_values_hash}->{$feature}}
+            if ! contained_in($feature, keys %{$self->{_numeric_features_valuerange_hash}});
+        push @number_of_values, scalar @values;
+    }
+    print "Number of features: $num_of_features\n";
+    my @minmax = minmax(\@number_of_values);
+    my $max_num_values = $minmax[1];
+    print "Largest number of values for symbolic features is: $max_num_values\n";
+    my $estimated_number_of_nodes = $max_num_values ** $num_of_features;
+    print "\nWORST CASE SCENARIO: The decision tree COULD have as many as $estimated_number_of_nodes " .
+          "nodes. The exact number of nodes created depends critically on " .
+          "the entropy_threshold used for node expansion (the default value " .
+          "for this threshold is 0.01) and on the value set for max_depth_desired " .
+          "for the depth of the tree.\n";
     if ($estimated_number_of_nodes > 10000) {
-        print "\nTHIS IS WAY TOO MANY NODES. Consider using a relatively large value for\n   entropy_threshold and/or a small value for for max_depth_desired\n   to reduce the number of nodes created.\n";
-        print "\nDo you wish to continue? Enter 'y' if yes and 'n' if no:  ";
+        print "\nTHIS IS WAY TOO MANY NODES. Consider using a relatively " .
+              "large value for entropy_threshold and/or a small value for " .
+              "for max_depth_desired to reduce the number of nodes created.\n";
+        print "\nDo you wish to continue anyway? Enter 'y' for yes:  ";
         my $answer = <STDIN>;
         chomp $answer;
         while ( ($answer !~ /y(es)?/i) && ($answer !~ /n(o)?/i) ) {
@@ -652,19 +1658,128 @@ sub determine_data_condition {
         }
         die unless $answer =~ /y(es)?/i;
     }
-    print "\nI will start by showing you the probabilities of feature-value pairs in your data:\n\n";
-    foreach my $feature (@features) {
-        my @values_for_feature = @{$features_and_values_hash{$feature}};
-        foreach my $value (@values_for_feature) {
-            my $prob = $self->probability_for_feature_value($feature,$value); 
-            print "Probability of feature-value pair ($feature,$value): $prob\n"; 
-        }
-    }
 }
 
-###################  Read Training Data From File  ###################
 
+####################################  Read Training Data From File  ######################################
+
+sub get_training_data_from_csv {
+    my $self = shift;
+    my $filename = $self->{_training_datafile};
+    open FILEIN, $filename or die "Unable to open $filename: $!";
+    die("Aborted. get_training_data_csv() is only for CSV files") unless $filename =~ /\.csv$/;
+    my $class_name_in_column = $self->{_csv_class_column_index} - 1;   # subtract 1 because first col has labels
+    my @all_data =  <FILEIN>;
+    my %data_hash = ();
+    foreach my $record (@all_data) {
+        my @fields =  map {$_ =~ s/^\s*|\s*$//; $_} split /,/, $record;
+        my @fields_after_first = @fields[1..$#fields]; 
+        $data_hash{$fields[0]} = \@fields_after_first;
+    }
+    die 'Aborted. The first row of CSV file must begin with "" and then list the feature names and class names'
+                                      unless exists $data_hash{'""'};
+    my @field_names = map {$_ =~ s/^\s*\"|\"\s*$//g;$_} @{$data_hash{'""'}};
+    my $class_column_heading = $field_names[$class_name_in_column];
+    my @feature_names = map {$field_names[$_-1]} @{$self->{_csv_columns_for_features}};
+    $class_column_heading =~ s/^\s*\"|\"\s*$//g;
+    my %class_for_sample_hash = ();
+    my %feature_values_for_samples_hash = ();
+    foreach my $key (keys %data_hash) {
+        next if $key =~ /^\"\"$/;
+        my $cleanedup = $key;
+        $cleanedup =~ s/^\s*\"|\"\s*$//g;
+        my $which_class = $data_hash{$key}[$class_name_in_column];
+        $which_class  =~ s/^\s*\"|\"\s*$//g;
+        $class_for_sample_hash{"sample_$cleanedup"} = "$class_column_heading=$which_class";
+        my @features_and_values_list = ();
+        foreach my $i (@{$self->{_csv_columns_for_features}}) {
+            my $feature_column_header = $field_names[$i-1];
+            my $feature_val = $data_hash{$key}->[$i-1];
+            $feature_val  =~ s/^\s*\"|\"\s*$//g;
+            $feature_val = sprintf("%.1f",$feature_val) if $feature_val =~ /^\d+$/;
+            push @features_and_values_list,  "$feature_column_header=$feature_val";
+        }
+        $feature_values_for_samples_hash{"sample_" . $cleanedup} = \@features_and_values_list;
+    }
+    my %features_and_values_hash = ();
+    foreach my $i (@{$self->{_csv_columns_for_features}}) {
+        my $feature = $data_hash{'""'}[$i-1];
+        $feature =~ s/^\s*\"|\"\s*$//g;
+        my @feature_values = ();
+        foreach my $key (keys %data_hash) {     
+            next if $key =~ /^\"\"$/;
+            my $feature_val = $data_hash{$key}[$i-1];
+            $feature_val =~ s/^\s*\"|\"\s*$//g;
+            $feature_val = sprintf("%.1f",$feature_val) if $feature_val =~ /^\d+$/;
+            push @feature_values, $feature_val;
+        }
+        $features_and_values_hash{$feature} = \@feature_values;
+    }
+    my %seen = ();
+    my @all_class_names = grep {$_ if !$seen{$_}++}  values %class_for_sample_hash;
+    print "\n All class names: @all_class_names\n" if $self->{_debug3};
+    my %numeric_features_valuerange_hash = ();
+    my %feature_values_how_many_uniques_hash = ();
+    my %features_and_unique_values_hash = ();
+    foreach my $feature (keys %features_and_values_hash) {
+        my %seen1 = ();
+        my @unique_values_for_feature = sort grep {$_ if $_ ne 'NA' && !$seen1{$_}++} 
+                                                   @{$features_and_values_hash{$feature}};
+        $feature_values_how_many_uniques_hash{$feature} = scalar @unique_values_for_feature;
+        my $not_all_values_float = 0;
+        map {$not_all_values_float = 1 if $_ !~ /^\d*\.\d+$/} @unique_values_for_feature;
+        if ($not_all_values_float == 0) {
+            my @minmaxvalues = minmax(\@unique_values_for_feature);
+            $numeric_features_valuerange_hash{$feature} = \@minmaxvalues; 
+        }
+        $features_and_unique_values_hash{$feature} = \@unique_values_for_feature;
+    }
+    if ($self->{_debug1}) {
+        print "\nAll class names: @all_class_names\n";
+        print "\nEach sample data record:\n";
+        foreach my $sample (sort {sample_index($a) <=> sample_index($b)} keys %feature_values_for_samples_hash) {
+            print "$sample  =>  @{$feature_values_for_samples_hash{$sample}}\n";
+        }
+        print "\nclass label for each data sample:\n";
+        foreach my $sample (sort {sample_index($a) <=> sample_index($b)}  keys %class_for_sample_hash) {
+            print "$sample => $class_for_sample_hash{$sample}\n";
+        }
+        print "\nFeatures used: @feature_names\n\n";
+        print "\nfeatures and the values taken by them:\n";
+        foreach my $feature (sort keys %features_and_values_hash) {
+            print "$feature => @{$features_and_values_hash{$feature}}\n";
+        }
+        print "\nnumeric features and their ranges:\n";
+        foreach  my $feature (sort keys %numeric_features_valuerange_hash) {
+            print "$feature  =>  @{$numeric_features_valuerange_hash{$feature}}\n";
+        }
+        print "\nnumber of unique values in each feature:\n";
+        foreach  my $feature (sort keys %feature_values_how_many_uniques_hash) {
+            print "$feature  =>  $feature_values_how_many_uniques_hash{$feature}\n";
+        }
+    }
+    $self->{_class_names} = \@all_class_names;
+    $self->{_feature_names} = \@feature_names;
+    $self->{_samples_class_label_hash}  =  \%class_for_sample_hash;
+    $self->{_training_data_hash}  =  \%feature_values_for_samples_hash;
+    $self->{_features_and_values_hash}  = \%features_and_values_hash;
+    $self->{_features_and_unique_values_hash}  =  \%features_and_unique_values_hash;
+    $self->{_numeric_features_valuerange_hash} = \%numeric_features_valuerange_hash;
+    $self->{_feature_values_how_many_uniques_hash} = \%feature_values_how_many_uniques_hash;
+}
+
+##  If your training data is purely symbolic, as in Version 1.7.1, you are better off
+##  creating a `.dat' file.  For purely numeric data or mixed data, place it in a
+##  `.csv' file.  See examples of these files in the `examples' subdirectory.
 sub get_training_data {
+    my $self = shift;
+    my $filename = $self->{_training_datafile};
+    $self->get_training_data_from_csv() if $filename =~ /.csv$/;
+    $self->get_training_data_from_dat() if $filename =~ /.dat$/;
+}
+
+##  Meant for purely symbolic data (as in all versions up to v. 1.7.1)
+sub get_training_data_from_dat {
     my $self = shift;
     my @feature_names;
     my %features_and_values_hash;
@@ -691,8 +1806,11 @@ sub get_training_data {
             @class_names = split /\s+/, $1;
             @class_names = grep {defined($_) && length($_) > 0} @class_names;
             my @bad_names = grep /\W+/, @class_names;            
-            die "Your class names near the top of the training file do not look clean.  Class names are only allowed to have alphanumeric characters (including the underscore).  They must not be separated by punctuation marks such as commas. The class names must be separated by white space only" 
-                unless @bad_names == 0;
+            die "Your class names near the top of the training file do not look clean.  Class names " .
+                "are only allowed to have alphanumeric characters (including the underscore).  " .
+                "They must not be separated by punctuation marks such as commas. The class names " .
+                "must be separated by white space only" 
+                                                  unless @bad_names == 0;
             die "You have not supplied any class names in your training file"
                 if @class_names == 0;
             next;
@@ -704,12 +1822,15 @@ sub get_training_data {
             $recording_features_flag = 0;
             next;
         } elsif ( !$recording_training_data && $recording_features_flag ) {
-            my ($feature_name, $value_string) = $_ =~ /^\s*(\S+)\s*=>\s*(.+)/i;
+            my ($feature_name, $value_string) = $_ =~ /^\s*(\S+)\s*=\s*(.+)/i;
             $features_and_values_hash{$feature_name} = [];
             my @values = split /\s+/, $value_string;
             @values = grep {defined($_) && length($_) > 0} @values;
             push @{$features_and_values_hash{$feature_name}}, @values;
             push @feature_names, $feature_name;
+            my %seen = ();
+            my @unique_values = sort map {$_ if !$seen{$_}++} @values;
+            $self->{_features_and_unique_values_hash}->{$feature_name} = \@unique_values;
         } elsif ($recording_training_data) {
             if (@table_header == 0) {
                 @table_header = split;
@@ -723,20 +1844,25 @@ sub get_training_data {
             @record =  grep {defined($_) && length($_) > 0} @record;
             my $num_of_feature_vals = scalar(@record) - 2;
             my $num_of_features = @feature_names;
-            die "Your training datafile is defective.  The number of values, $num_of_feature_vals, declared for $record[0] does not match the number of features declared at the beginning of the datafile. You previously declared  $num_of_features features." unless @record == $num_of_features + 2;
+            die "Your training datafile is defective.  The number of values, $num_of_feature_vals, " .
+                "declared for $record[0] does not match the number of features declared at the " .
+                "beginning of the datafile. You previously declared  $num_of_features features." 
+                                       unless @record == $num_of_features + 2;
             my $class_name_in_record = $record[1];
-            die "The class name in sample record $record[0] does not match the class names declared at the top of your training file"
-                unless contained_in($class_name_in_record, @class_names);
+            die "The class name in sample record $record[0] does not match the class names declared " .
+                "at the top of your training file"
+                                  unless contained_in($class_name_in_record, @class_names);
             $samples_class_label_hash{$record[0]} = $record[1];
             $training_data_hash{$record[0]} = [];
             foreach my $i (2..@record-1) {
                 my $feature_name_for_this_col = $column_label_hash{$i};
                 my @values_for_this_feature = 
                     @{$features_and_values_hash{$feature_name_for_this_col}};
-                die "For sample record $record[0], one of the feature values, $record[$i], is illegal. Legal values for this feature, $column_label_hash{$i}, are: @values_for_this_feature"
-                    unless contained_in($record[$i], @values_for_this_feature);
+                die "For sample record $record[0], one of the feature values, $record[$i], is illegal. " .
+                    "Legal values for this feature, $column_label_hash{$i}, are: @values_for_this_feature"
+                                      unless contained_in($record[$i], @values_for_this_feature);
                 push @{$training_data_hash{$record[0]}}, 
-                                "$column_label_hash{$i}" . "=>" . $record[$i];
+                                "$column_label_hash{$i}" . "=" . $record[$i];
             }
         }
     }
@@ -748,7 +1874,8 @@ sub get_training_data {
     }
     if (@empty_classes) {
         my $num_empty_classes = @empty_classes;       
-        print "\nDid you know you have $num_empty_classes class(es).  The DecisionTree module can ignore these classes for you.\n";
+        print "\nDid you know you have $num_empty_classes class(es).  The DecisionTree module " .
+              "can ignore these classes for you.\n";
         print "EMPTY CLASSES: @empty_classes\n";
         print "Do you wish to continue? Enter 'y' if yes:  ";
         my $answer = <STDIN>;
@@ -767,12 +1894,20 @@ sub get_training_data {
     $self->{_features_and_values_hash} = \%features_and_values_hash;
     $self->{_samples_class_label_hash} = \%samples_class_label_hash;
     $self->{_training_data_hash} = \%training_data_hash;
-    my %feature_value_probability_hash;
+    if ($self->{_debug1}) {
+        print "\nClass names: @{$self->{_class_names}}\n";
+        print "\nFeature names: @{$self->{_feature_names}}\n";
+        print "Features and values:\n";
+        foreach my $feature (sort keys %{$self->{_features_and_values_hash}}) {
+            print "$feature  =>  @{$self->{_features_and_values_hash}->{$feature}}\n";
+        }
+    }
     foreach my $feature (@feature_names) {
         my @values_for_feature = @{$features_and_values_hash{$feature}};
         foreach my $value (@values_for_feature) {
-            $self->{_probability_hash}->{"$feature=>$value"} =
-                  $self->probability_for_feature_value($feature,$value); 
+            my $feature_and_value = "$feature=$value";
+            $self->{_probability_cache}->{$feature_and_value} =  
+                                            $self->probability_of_feature_value($feature,$value); 
         }
     }
 }    
@@ -805,10 +1940,555 @@ sub get_class_names {
     return @{$self->{_class_names}}
 }
 
+##########################################  Utility Routines  ############################################
 
-###################  For Generating Your Own Training Data  ###############
+sub closest_sampling_point {
+    my $value = shift;
+    my $arr_ref = shift;
+    my @arr = @{$arr_ref};
+    my @compare = map {abs($_ - $value)} @arr;
+    my ($minval,$index) = minimum(\@compare);
+    return $arr[$index];
+}
 
-sub read_parameter_file {
+# returns the array index that contains a specified STRING value:
+# meant only for array of strings
+sub get_index_at_value {
+    my $value = shift;
+    my @array = @{shift @_};
+    foreach my $i (0..@array-1) {
+        return $i if $value eq $array[$i];
+    }
+}
+
+# Every sample in the training data are expected to start with a symbolic sample name
+# followed by an underscore and then followed by an integer that designates the
+# integer id of the sample.  For example, the first sample in the training data may
+# be labeled 'mysample_0' and the second sample 'mysample_1', and so on.  The
+# following function returns the integer part of a sample name.
+sub sample_index {
+    my $arg = shift;
+    $arg =~ /_(.+)$/;
+    return $1;
+}    
+
+# Returns the minimum value and its positional index in an array
+sub minimum {
+    my $arr = shift;
+    my $min;
+    my $index;
+    foreach my $i (0..@{$arr}-1) {
+        if ( (!defined $min) || ($arr->[$i] < $min) ) {
+            $index = $i;
+            $min = $arr->[$i];
+        }
+    }
+    return ($min, $index);
+}
+
+# Returns an array of two values, the min and the max, of an array of floats
+sub minmax {
+    my $arr = shift;
+    my ($min, $max);
+    foreach my $i (0..@{$arr}-1) {
+        if ( (!defined $min) || ($arr->[$i] < $min) ) {
+            $min = $arr->[$i];
+        }
+        if ( (!defined $max) || ($arr->[$i] > $max) ) {
+            $max = $arr->[$i];
+        }
+    }
+    return ($min, $max);
+}
+
+# checks whether an element is in an array:
+sub contained_in {
+    my $ele = shift;
+    my @array = @_;
+    my $count = 0;
+    map {$count++ if $ele eq $_} @array;
+    return $count;
+}
+
+# Meant only for an array of strings (no nesting):
+sub deep_copy_array {
+    my $ref_in = shift;
+    my $ref_out;
+    return [] if scalar @$ref_in == 0;
+    foreach my $i (0..@{$ref_in}-1) {
+        $ref_out->[$i] = $ref_in->[$i];
+    }
+    return $ref_out;
+}
+
+sub check_for_illegal_params2 {
+    my @params = @_;
+    my @legal_params = qw / training_datafile
+                            entropy_threshold
+                            max_depth_desired
+                            csv_class_column_index
+                            csv_columns_for_features
+                            symbolic_to_numeric_cardinality_threshold
+                            debug1
+                            debug2
+                            debug3
+                          /;
+    my $found_match_flag;
+    foreach my $param (@params) {
+        foreach my $legal (@legal_params) {
+            $found_match_flag = 0;
+            if ($param eq $legal) {
+                $found_match_flag = 1;
+                last;
+            }
+        }
+        last if $found_match_flag == 0;
+    }
+    return $found_match_flag;
+}
+
+sub print_array_with_msg {
+    my $message = shift;
+    my $arr = shift;
+    print "\n$message: ";
+    print_nested_array( $arr );
+}
+
+sub print_nested_array {
+    my $arr = shift;
+    my @arr = @$arr;
+    print "[";
+    foreach my $item (@arr) {
+        if (ref $item) {
+            print_nested_array($item);
+        } else {
+            print "$item";
+        }
+    }
+    print "]";
+}    
+
+
+#############################################  Class DTNode  #############################################
+
+# The nodes of the decision tree are instances of this class:
+
+package DTNode;
+
+use strict; 
+use Carp;
+
+our $nodes_created = 0;
+our @class_names;
+
+# $feature is the feature test at the current node.  $branch_features_and_values is
+# an anonymous array holding the feature names and corresponding values on the path
+# from the root to the current node:
+sub new {                                                           
+    my ($class, $feature, $entropy, $class_probabilities, $branch_features_and_values_or_thresholds) = @_; 
+    bless {                                                         
+        _serial_number           => $nodes_created++,
+        _feature                 => $feature,                                       
+        _node_creation_entropy   => $entropy,
+        _class_probabilities     => $class_probabilities,
+        _branch_features_and_values_or_thresholds => $branch_features_and_values_or_thresholds,
+        _linked_to => [],                                          
+    }, $class;                                                     
+}
+
+sub how_many_nodes {
+    my $self = shift;
+    return $nodes_created;
+}
+
+# class method
+sub set_class_names {
+    my $class = shift;
+    die "illegal invocation of a class method" 
+        unless $class eq 'DTNode';
+    my $class_names_list = shift;
+    @class_names = @{$class_names_list};
+}
+
+# class method
+sub get_class_names {
+    my $class = shift;
+    die "illegal invocation of a class method" 
+        unless $class eq 'DTNode';
+    return \@class_names;
+}
+
+sub get_serial_num {
+    my $self = shift;
+    $self->{_serial_number};
+}
+
+# this returns the feature test at the current node
+sub get_feature {                                  
+    my $self = shift;                              
+    return $self->{ _feature };                    
+}
+
+sub set_feature {
+    my $self = shift;
+    my $feature = shift;
+    $self->{_feature} = $feature;
+}
+
+sub get_node_entropy {
+    my $self = shift;                              
+    return $self->{_node_creation_entropy};
+}
+
+sub get_class_probabilities {                                  
+    my $self = shift;                              
+    return $self->{ _class_probabilities};                    
+}
+
+sub get_branch_features_and_values_or_thresholds {
+    my $self = shift; 
+    return $self->{_branch_features_and_values_or_thresholds};
+}
+
+sub add_to_branch_features_and_values {
+    my $self = shift;                   
+    my $feature_and_value = shift;
+    push @{$self->{ _branch_features_and_values }}, $feature_and_value;
+}
+
+sub get_children {       
+    my $self = shift;                   
+    return $self->{_linked_to};
+}
+
+sub add_child_link {         
+    my ($self, $new_node, ) = @_;                            
+    push @{$self->{_linked_to}}, $new_node;                  
+}
+
+sub delete_all_links {                  
+    my $self = shift;                   
+    $self->{_linked_to} = undef;        
+}
+
+sub display_node {
+    my $self = shift; 
+    my $feature_at_node = $self->get_feature() || " ";
+    my $node_creation_entropy_at_node = $self->get_node_entropy();
+    my $print_node_creation_entropy_at_node = sprintf("%.3f", $node_creation_entropy_at_node);
+    my @class_probabilities = @{$self->get_class_probabilities()};
+    my @class_probabilities_for_display = map {sprintf("%0.3f", $_)} @class_probabilities;
+    my $serial_num = $self->get_serial_num();
+    my @branch_features_and_values_or_thresholds = @{$self->get_branch_features_and_values_or_thresholds()};
+    print "\n\nNODE $serial_num" .
+          ":\n   Branch features and values to this node: @branch_features_and_values_or_thresholds" .
+          "\n   Class probabilities at current node: @class_probabilities_for_display" .
+          "\n   Entropy at current node: $print_node_creation_entropy_at_node" .
+          "\n   Best feature test at current node: $feature_at_node\n\n";
+}
+
+sub display_decision_tree {
+    my $self = shift;
+    my $offset = shift;
+    my $serial_num = $self->get_serial_num();
+    if (@{$self->get_children()} > 0) {
+        my $feature_at_node = $self->get_feature() || " ";
+        my $node_creation_entropy_at_node = $self->get_node_entropy();
+        my $print_node_creation_entropy_at_node = sprintf("%.3f", $node_creation_entropy_at_node);
+        my @branch_features_and_values_or_thresholds = @{$self->get_branch_features_and_values_or_thresholds()};
+        my @class_probabilities = @{$self->get_class_probabilities()};
+        my @print_class_probabilities = map {sprintf("%0.3f", $_)} @class_probabilities;
+        my @class_names = @{DTNode->get_class_names()};
+        my @print_class_probabilities_with_class =
+            map {"$class_names[$_]" . '=>' . $print_class_probabilities[$_]} 0..@class_names-1;
+        print "NODE $serial_num: $offset BRANCH TESTS TO NODE: @branch_features_and_values_or_thresholds\n";
+        my $second_line_offset = "$offset" . " " x (8 + length("$serial_num"));
+        print "$second_line_offset" . "Decision Feature: $feature_at_node    Node Creation Entropy: " ,
+              "$print_node_creation_entropy_at_node   Class Probs: @print_class_probabilities_with_class\n\n";
+        $offset .= "   ";
+        foreach my $child (@{$self->get_children()}) {
+            $child->display_decision_tree($offset);
+        }
+    } else {
+        my $node_creation_entropy_at_node = $self->get_node_entropy();
+        my $print_node_creation_entropy_at_node = sprintf("%.3f", $node_creation_entropy_at_node);
+        my @branch_features_and_values_or_thresholds = @{$self->get_branch_features_and_values_or_thresholds()};
+        my @class_probabilities = @{$self->get_class_probabilities()};
+        my @print_class_probabilities = map {sprintf("%0.3f", $_)} @class_probabilities;
+        my @class_names = @{DTNode->get_class_names()};
+        my @print_class_probabilities_with_class =
+            map {"$class_names[$_]" . '=>' . $print_class_probabilities[$_]} 0..@class_names-1;
+        print "NODE $serial_num: $offset BRANCH TESTS TO NODE: @branch_features_and_values_or_thresholds\n";
+        my $second_line_offset = "$offset" . " " x (8 + length("$serial_num"));
+        print "$second_line_offset" . "Node Creation Entropy: $print_node_creation_entropy_at_node   " .
+              "Class Probs: @print_class_probabilities_with_class\n\n";
+    }
+}
+
+
+##############################  Generate Your Own Numeric Training Data  #################################
+
+##  See the example script generate_training_data_numeric.pl on how to use this class
+##  for generating your own numeric training data.  The training data is generated in
+##  accordance with the specifications you place in the parameter file that is
+##  supplied as an argument to the constructor of this class.
+
+package TrainingDataGeneratorNumeric;
+
+use strict;                                                         
+use Carp;
+
+sub new {                                                           
+    my ($class, %args) = @_;
+    my @params = keys %args;
+    croak "\nYou have used a wrong name for a keyword argument " .
+          "--- perhaps a misspelling\n" 
+          if check_for_illegal_params3(@params) == 0;   
+    bless {
+        _output_csv_file                   =>   $args{'output_csv_file'} 
+                                                          || croak("output_csv_file required"),
+        _parameter_file                    =>   $args{'parameter_file'}
+                                                          || croak("parameter_file required"),
+        _number_of_samples_per_class       =>   $args{'number_of_samples_per_class'} 
+                                                          || croak("number_of_samples_per_class required"),
+        _debug                             =>    $args{debug} || 0,
+        _class_names                       =>    [],
+        _class_names_and_priors            =>    {},
+        _features_with_value_range         =>    {},
+        _classes_and_their_param_values    =>    {},
+    }, $class;
+}
+
+sub check_for_illegal_params3 {
+    my @params = @_;
+    my @legal_params = qw / output_csv_file
+                            parameter_file
+                            number_of_samples_per_class
+                            debug
+                          /;
+    my $found_match_flag;
+    foreach my $param (@params) {
+        foreach my $legal (@legal_params) {
+            $found_match_flag = 0;
+            if ($param eq $legal) {
+                $found_match_flag = 1;
+                last;
+            }
+        }
+        last if $found_match_flag == 0;
+    }
+    return $found_match_flag;
+}
+
+##  The training data generated by an instance of the class
+##  TrainingDataGeneratorNumeric is based on the specs you place in a parameter that
+##  you supply to the class constructor through a constructor variable called
+##  `parameter_file'.  This method is for parsing the parameter file in order to
+##  order to determine the names to be used for the different data classes, their
+##  means, and their variances.
+sub read_parameter_file_numeric {
+    my $self = shift;
+    my @class_names = ();
+    my %class_names_and_priors = ();
+    my %features_with_value_range = ();
+    my %classes_and_their_param_values = ();
+#   my $regex8 =  '[+-]?\ *(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?';
+    open FILE, $self->{_parameter_file} || "unable to open parameter file: $!";
+    my @params = <FILE>;
+    my $params = join "", @params;
+    my $regex = 'class names: ([\w ]+)\W*class priors: ([\d. ]+)';
+    $params =~ /$regex/si;
+    my ($class_names, $class_priors) = ($1, $2);
+    @class_names = split ' ', $class_names; 
+    my @class_priors = split ' ', $class_priors;
+    foreach my $i (0..@class_names-1) {
+        $class_names_and_priors{$class_names[$i]} = $class_priors[$i];
+    }
+    if ($self->{_debug}) {
+        foreach my $cname (keys %class_names_and_priors) {
+            print "$cname  =>   $class_names_and_priors{$cname}\n";
+        }
+    }
+    $regex = 'feature name: \w*.*?value range: [\d\. -]+';
+    my @features = $params =~ /$regex/gsi;
+    $regex = 'feature name: (\w+)\W*?value range:\s*([\d. -]+)';
+    foreach my $feature (@features) {
+        $feature =~ /$regex/i;
+        my $feature_name = $1;
+        my @value_range = split ' ', $2;
+        $features_with_value_range{$feature_name} = \@value_range;
+    }
+    if ($self->{_debug}) {
+        foreach my $fname (keys %features_with_value_range) {
+            print "$fname  =>   @{$features_with_value_range{$fname}}\n";
+        }
+    }
+    foreach my $i (0..@class_names-1) {
+        $classes_and_their_param_values{$class_names[$i]} = {};
+    }
+    $regex = 'params for class: \w*?\W+?mean:[\d\. ]+\W*?covariance:\W+?(?:[ \d.]+\W+?)+';
+    my @class_params = $params =~ /$regex/gsi;
+    $regex = 'params for class: (\w+)\W*?mean:\s*([\d. -]+)\W*covariance:\s*([\s\d.]+)';
+    foreach my $class_param (@class_params) {
+        $class_param =~ /$regex/gsi;
+        my $class_name = $1;
+        my @class_mean = split ' ', $2;
+        $classes_and_their_param_values{$class_name}->{'mean'} =  \@class_mean;
+        my $class_param_string = $3;
+        my @covar_rows = split '\n', $class_param_string;
+        my @covar_matrix;
+        foreach my $row (@covar_rows) {
+            my @row = split ' ', $row;
+            push @covar_matrix, \@row;
+        }
+        $classes_and_their_param_values{$class_name}->{'covariance'} =  \@covar_matrix;
+    }
+    if ($self->{_debug}) {
+        print "\nThe class parameters are:\n\n";
+        foreach my $cname (keys %classes_and_their_param_values) {
+            print "\nFor class name $cname:\n";
+            my %params_hash = %{$classes_and_their_param_values{$cname}};
+            foreach my $x (keys %params_hash) {
+                if ($x eq 'mean') {
+                    print "    $x   =>   @{$params_hash{$x}}\n";
+                } else {
+                    if ($x eq 'covariance') {
+                        print "    The covariance matrix:\n";
+                        my @matrix = @{$params_hash{'covariance'}};
+                        foreach my $row (@matrix) {
+                            print "        @$row\n";
+                        }
+                    }
+                }
+            }
+        }
+    }
+    $self->{_class_names}        =   \@class_names;
+    $self->{_class_names_and_priors}   = \%class_names_and_priors;
+    $self->{_features_with_value_range}   = \%features_with_value_range;
+    $self->{_classes_and_their_param_values} = \%classes_and_their_param_values;
+}
+
+##  After the parameter file is parsed by the previous method, this method calls on
+##  Math::Random::random_multivariate_normal() to generate the training data
+##  samples. Your training data can be of any number of of dimensions, can have any
+##  mean, and any covariance.
+sub gen_numeric_training_data_and_write_to_csv {
+    use Math::Random;
+    my $self = shift;
+    my %samples_for_class;
+    foreach my $class_name (@{$self->{_class_names}}) {
+        $samples_for_class{$class_name} = [];            
+    }
+    foreach my $class_name (keys %{$self->{_classes_and_their_param_values}}) {
+        my @mean = @{$self->{_classes_and_their_param_values}->{$class_name}->{'mean'}};
+        my @covariance = @{$self->{_classes_and_their_param_values}->{$class_name}->{'covariance'}};
+        my @new_data = Math::Random::random_multivariate_normal($self->{_number_of_samples_per_class}, 
+                                                                                   @mean, @covariance );
+        if ($self->{_debug}) {
+            print "for class $class_name:\n";
+            foreach my $x (@new_data) {print "@$x\n";}
+        }
+        $samples_for_class{$class_name} = \@new_data;
+    }
+    my @data_records = ();
+    foreach my $class_name (keys %samples_for_class) {
+        foreach my $sample_index (0..$self->{_number_of_samples_per_class}-1) {
+            my @vector = @{$samples_for_class{$class_name}->[$sample_index]};
+            @vector = map {sprintf("%.3f", $_)} @vector;
+            my $data_record = "$class_name," . join(",", @vector) . "\n";
+            push @data_records, $data_record;
+        }
+    }
+    fisher_yates_shuffle(\@data_records);
+    if ($self->{_debug}) {
+        foreach my $record (@data_records) {
+            print "$record";
+        }
+    }
+    open OUTPUT, ">$self->{_output_csv_file}";
+    my @feature_names = keys %{$self->{_features_with_value_range}};
+    my @quoted_feature_names = map {"\"$_\""} @feature_names;
+    my $first_row = '"",' . "\"class_name\"," . join ",", @quoted_feature_names;
+    print OUTPUT "$first_row\n";
+    my @sample_records = ();
+    foreach my $i (0..@data_records-1) {
+        my $i1 = $i+1;
+        my $sample_record = "\"$i1\",$data_records[$i]";
+        print OUTPUT "$sample_record";
+    }
+    close OUTPUT;
+}
+
+# from perl docs:                                                                         
+sub fisher_yates_shuffle {
+    my $arr =  shift;
+    my $i = @$arr;
+    while (--$i) {
+        my $j = int rand( $i + 1 );
+        @$arr[$i, $j] = @$arr[$j, $i];
+    }
+}
+
+##############################  Generate Your Own Symbolic Training Data  ################################
+
+##  See the sample script generate_training_data_symbolic.pl for how to use this
+##  class for generating symbolic training data.  The data is generated according to
+##  the specifications you place in a parameter file whose name you supply as one of
+##  constructor arguments.
+package TrainingDataGeneratorSymbolic;
+
+use strict;                                                         
+use Carp;
+
+sub new {                                                           
+    my ($class, %args) = @_;
+    my @params = keys %args;
+    croak "\nYou have used a wrong name for a keyword argument " .
+          "--- perhaps a misspelling\n" 
+          if check_for_illegal_params4(@params) == 0;   
+    bless {
+        _output_datafile                   =>   $args{'output_datafile'} 
+                                                          || croak("output_datafile required"),
+        _parameter_file                    =>   $args{'parameter_file'}
+                                                          || croak("parameter_file required"),
+        _number_of_training_samples        =>   $args{'number_of_training_samples'} 
+                                                          || croak("number_of_training_samples required"),
+        _write_to_file                     =>   $args{'write_to_file'}, 
+        _debug1                            =>    $args{debug1} || 0,
+        _debug2                            =>    $args{debug2} || 0,
+        _class_names                       =>    [],
+        _class_priors                      =>    [],
+        _features_and_values_hash          =>    {},
+        _bias_hash                         =>    {},
+        _training_sample_records           =>    {},
+    }, $class;
+}
+
+sub check_for_illegal_params4 {
+    my @params = @_;
+    my @legal_params = qw / output_datafile
+                            write_to_file
+                            number_of_training_samples
+                            parameter_file
+                            debug1
+                            debug2
+                          /;
+    my $found_match_flag;
+    foreach my $param (@params) {
+        foreach my $legal (@legal_params) {
+            $found_match_flag = 0;
+            if ($param eq $legal) {
+                $found_match_flag = 1;
+                last;
+            }
+        }
+        last if $found_match_flag == 0;
+    }
+    return $found_match_flag;
+}
+
+sub read_parameter_file_symbolic {
     my $self = shift;
     my $debug = $self->{_debug1};
     my $debug2 = $self->{_debug2};
@@ -892,7 +2572,7 @@ sub read_parameter_file {
     }
 }
 
-sub gen_training_data {
+sub gen_symbolic_training_data {
     my $self = shift;
     my @class_names = @{$self->{_class_names}};
     my @class_priors = @{$self->{_class_priors}};
@@ -1042,12 +2722,182 @@ sub write_training_data_to_file {
     close FILEHANDLE;
 }
 
-#######################   For Generating Test Data   ####################
+sub find_longest_feature_or_value {
+    my $self = shift;
+    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
+    my $max_length;
+    foreach my $feature (keys %features_and_values_hash) {
+        $max_length = length $feature if ! defined $max_length; 
+        $max_length = length( $feature ) if length($feature) > $max_length;
+        my @values = @{$features_and_values_hash{$feature}};
+        foreach my $value (@values) {
+            $max_length = length( $value ) if length($value) > $max_length;
+        }
+    }
+    return $max_length;
+}
 
-# Although the following method could be combined with 
-# the gen_training_data() method, I have kept them separate
-# to make it easier to generate test data whose stats may not
-# be identical to that of the training data:
+sub sample_index {
+    my $arg = shift;
+    $arg =~ /_(.+)$/;
+    return $1;
+}    
+
+#########################  Generate Your Own Test Data For Purely Symbolic Case  #########################
+
+
+##  This convenience class does basically the same thing as the
+##  TrainingDataGeneratorSymbolic except that it places the class labels for the
+##  sample records in a separate file.  Let's say you have already created a DT
+##  classifier and you would like to test its class discriminatory power.  You can
+##  use the classifier to calculate the class labels for the data records produced by
+##  the class shown here.  And then you can compare the calculated class labels with
+##  those placed originally by this class in a separate file.  See the script
+##  generate_test_data_symbolic.pl for how to use this class.
+
+package TestDataGeneratorSymbolic;
+
+use strict;                                                         
+use Carp;
+
+sub new {                                                           
+    my ($class, %args) = @_;
+    my @params = keys %args;
+    croak "\nYou have used a wrong name for a keyword argument " .
+          "--- perhaps a misspelling\n" 
+          if check_for_illegal_params5(@params) == 0;   
+    bless {
+        _output_test_datafile              =>   $args{'output_test_datafile'} 
+                                                          || croak("output_test_datafile required"),
+
+        _output_class_labels_file          =>   $args{'output_class_labels_file'} 
+                                                          || croak("output_class_labels_file required"),
+        _parameter_file                    =>   $args{'parameter_file'}
+                                                          || croak("parameter_file required"),
+        _number_of_test_samples            =>   $args{'number_of_test_samples'} 
+                                                          || croak("number_of_test_samples required"),
+        _write_to_file                     =>   $args{'write_to_file'}, 
+        _debug1                            =>    $args{debug1} || 0,
+        _debug2                            =>    $args{debug2} || 0,
+        _class_names                       =>    [],
+        _class_priors                      =>    [],
+        _features_and_values_hash          =>    {},
+        _bias_hash                         =>    {},
+        _test_sample_records               =>    {},
+    }, $class;
+}
+
+sub check_for_illegal_params5 {
+    my @params = @_;
+    my @legal_params = qw / output_test_datafile
+                            write_to_file
+                            number_of_test_samples
+                            output_class_labels_file
+                            parameter_file
+                            debug1
+                            debug2
+                          /;
+    my $found_match_flag;
+    foreach my $param (@params) {
+        foreach my $legal (@legal_params) {
+            $found_match_flag = 0;
+            if ($param eq $legal) {
+                $found_match_flag = 1;
+                last;
+            }
+        }
+        last if $found_match_flag == 0;
+    }
+    return $found_match_flag;
+}
+
+sub read_parameter_file_symbolic {
+    my $self = shift;
+    my $debug = $self->{_debug1};
+    my $debug2 = $self->{_debug2};
+    my $write_to_file = $self->{_write_to_file};
+    my $number_of_training_samples = $self->{_number_of_training_samples};
+    my $input_parameter_file = $self->{_parameter_file};
+    croak "Forgot to supply parameter file" if ! defined $input_parameter_file;
+    my $output_file = $self->{_output_datafile};
+    
+    my @all_params;
+    my $param_string;
+    open INPUT, $input_parameter_file
+                || "unable to open parameter file: $!";
+    @all_params = <INPUT>;
+    @all_params = grep { $_ !~ /^[ ]*#/ } @all_params;
+    chomp @all_params;
+    $param_string = join ' ', @all_params;
+    
+    my ($class_names, $class_priors, $rest_param) = 
+              $param_string =~ /^\s*class names:(.*?)\s*class priors:(.*?)(feature: .*)/;
+    my @class_names = grep {defined($_) && length($_) > 0} split /\s+/, $1;
+    push @{$self->{_class_names}}, @class_names;
+    my @class_priors =   grep {defined($_) && length($_) > 0} split /\s+/, $2;
+    push @{$self->{_class_priors}}, @class_priors;    
+    my ($feature_string, $bias_string) = $rest_param =~ /(feature:.*?) (bias:.*)/;
+    my %features_and_values_hash;
+    my @features = split /(feature[:])/, $feature_string;
+    @features = grep {defined($_) && length($_) > 0} @features;
+    foreach my $item (@features) {
+        next if $item =~ /feature/;
+        my @splits = split / /, $item;
+        @splits = grep {defined($_) && length($_) > 0} @splits;
+        foreach my $i (0..@splits-1) {
+            if ($i == 0) {
+                $features_and_values_hash{$splits[0]} = [];
+            } else {
+                next if $splits[$i] =~ /values/;
+                push @{$features_and_values_hash{$splits[0]}}, $splits[$i];
+            }
+        }
+    }
+    $self->{_features_and_values_hash} = \%features_and_values_hash;
+    my %bias_hash = %{$self->{_bias_hash}};
+    my @biases = split /(bias[:]\s*class[:])/, $bias_string;
+    @biases = grep {defined($_) && length($_) > 0} @biases;
+    foreach my $item (@biases) {
+        next if $item =~ /bias/;
+        my @splits = split /\s+/, $item;
+        @splits = grep {defined($_) && length($_) > 0} @splits;
+        my $feature_name;
+        foreach my $i (0..@splits-1) {
+            if ($i == 0) {
+                $bias_hash{$splits[0]} = {};
+            } elsif ($splits[$i] =~ /(^.+)[:]$/) {
+                $feature_name = $1;
+                $bias_hash{$splits[0]}->{$feature_name} = [];
+            } else {
+                next if !defined $feature_name;
+                push @{$bias_hash{$splits[0]}->{$feature_name}}, $splits[$i]
+                        if defined $feature_name;
+            }
+        }
+    }
+    $self->{_bias_hash} = \%bias_hash;
+    if ($debug) {
+        print "\n\nClass names: @class_names\n";
+        my $num_of_classes = @class_names;
+        print "Class priors: @class_priors\n";
+        print "Number of classes: $num_of_classes\n";
+        print "\nHere are the features and their possible values:\n";
+        while ( my ($k, $v) = each %features_and_values_hash ) {
+            print "$k ===>  @$v\n";
+        }
+        print "\nHere is the biasing for each class:\n";
+        while ( my ($k, $v) = each %bias_hash ) {
+            print "$k:\n";
+            while ( my ($k1, $v1) = each %$v ) {
+                print "       $k1 ===>  @$v1\n";
+            }
+        }
+    }
+}
+
+# Although the following method could be combined with the gen_training_data()
+# method, I have kept them separate to make it easier to generate test data whose
+# stats may not be identical to that of the training data:
 sub gen_test_data {
     my $self = shift;
     my @class_names = @{$self->{_class_names}};
@@ -1202,538 +3052,247 @@ sub find_longest_feature_or_value {
     return $max_length;
 }
 
-sub check_names_used {
-    my $self = shift;
-    my @features_and_values_test_data = @_;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my @legal_feature_names = keys %features_and_values_hash;
-    foreach my $feature_and_value (@features_and_values_test_data) {
-        my ($feature, $value) = $feature_and_value =~ /(.+)=>(.+)/;
-        croak "Your test data has formatting error" 
-            if !defined($feature) || !defined($value);
-        return 0 if ! contained_in($feature, @legal_feature_names);
-        my @legal_values = @{$features_and_values_hash{$feature}};
-        return 0 if ! contained_in($value, @legal_values);
-    }
-    return 1;
-}
-
-
-###########################  Utility Routines  #####################
-
-# returns the array index that contains a specified STRING value:
-# meant only for array of strings
-sub get_index_at_value {
-    my $value = shift;
-    my @array = @{shift @_};
-    foreach my $i (0..@array-1) {
-        return $i if $value eq $array[$i];
-    }
-}
-
-# Every sample in the training data are expected to start with a symbolic
-# sample name followed by an underscore and then followed by an integer
-# that designates the integer id of the sample.  For example, the first
-# sample in the training data may be labeled 'mysample_0' and the second
-# sample 'mysample_1', and so on.  The following function returns the
-# integer part of a sample name.
 sub sample_index {
     my $arg = shift;
     $arg =~ /_(.+)$/;
     return $1;
 }    
 
-# Returns the minimum value and its positional index in an array
-sub minimum {
-    my $arr = shift;
-    my $min;
-    my $index;
-    foreach my $i (0..@{$arr}-1) {
-        if ( (!defined $min) || ($arr->[$i] < $min) ) {
-            $index = $i;
-            $min = $arr->[$i];
-        }
-    }
-    return ($min, $index);
-}
-
-# checks whether an element is in an array:
-sub contained_in {
-    my $ele = shift;
-    my @array = @_;
-    my $count = 0;
-    map {$count++ if $ele eq $_} @array;
-    return $count;
-}
-
-# Meant only for an array of strings (no nesting):
-sub deep_copy_array {
-    my $ref_in = shift;
-    my $ref_out;
-    foreach my $i (0..@{$ref_in}-1) {
-        $ref_out->[$i] = $ref_in->[$i];
-    }
-    return $ref_out;
-}
-
-sub check_for_illegal_params1 {
-    my @params = @_;
-    my @legal_params = qw / output_datafile
-                            write_to_file
-                            number_of_training_samples
-                            parameter_file
-                            debug1
-                            debug2
-                          /;
-    my $found_match_flag;
-    foreach my $param (@params) {
-        foreach my $legal (@legal_params) {
-            $found_match_flag = 0;
-            if ($param eq $legal) {
-                $found_match_flag = 1;
-                last;
-            }
-        }
-        last if $found_match_flag == 0;
-    }
-    return $found_match_flag;
-}
-
-sub check_for_illegal_params2 {
-    my @params = @_;
-    my @legal_params = qw / training_datafile
-                            entropy_threshold
-                            max_depth_desired
-                            debug1
-                            debug2
-                          /;
-    my $found_match_flag;
-    foreach my $param (@params) {
-        foreach my $legal (@legal_params) {
-            $found_match_flag = 0;
-            if ($param eq $legal) {
-                $found_match_flag = 1;
-                last;
-            }
-        }
-        last if $found_match_flag == 0;
-    }
-    return $found_match_flag;
-}
-
-sub check_for_illegal_params3 {
-    my @params = @_;
-    my @legal_params = qw / output_test_datafile
-                            output_class_label_file
-                            parameter_file
-                            number_of_test_samples
-                            write_to_file
-                            debug1
-                            debug2
-                          /;
-    my $found_match_flag;
-    foreach my $param (@params) {
-        foreach my $legal (@legal_params) {
-            $found_match_flag = 0;
-            if ($param eq $legal) {
-                $found_match_flag = 1;
-                last;
-            }
-        }
-        last if $found_match_flag == 0;
-    }
-    return $found_match_flag;
-}
-
-#######################  Class Node  ###########################
-
-# The nodes of the decision tree are instances of this class:
-
-package Node;
-
-use strict;                                                         
-use Carp;
-
-our $nodes_created = 0;
-
-# $feature is the feature test at the current node.
-# $branch_features_and_values is an anonymous array holding
-# the feature names and corresponding values on the path
-# from the root to the current node:
-sub new {                                                           
-    my ($class, $feature, $entropy, $class_probabilities, $branch_features_and_values) = @_; 
-    bless {                                                         
-        _serial_number => $nodes_created++,
-        _feature => $feature,                                       
-        _entropy => $entropy,
-        _class_probabilities => $class_probabilities,
-        _branch_features_and_values => $branch_features_and_values,
-        _linked_to => [],                                          
-    }, $class;                                                     
-}
-
-sub get_serial_num {
-    my $self = shift;
-    $self->{_serial_number};
-}
-
-# This is a class method:
-sub how_many_nodes {
-    my $class = shift;
-    die "illegal invocation of a static method" 
-        unless $class eq 'Node';
-    $nodes_created;
-}
-
-# this returns the feature test at the current node
-sub get_feature {                                  
-    my $self = shift;                              
-    return $self->{ _feature };                    
-}
-
-sub set_feature {
-    my $self = shift;
-    my $feature = shift;
-    $self->{_feature} = $feature;
-}
-
-sub get_entropy {                                  
-    my $self = shift;                              
-    return $self->{ _entropy };                    
-}
-
-sub get_class_probabilities {                                  
-    my $self = shift;                              
-    return $self->{ _class_probabilities };                    
-}
-
-sub get_branch_features_and_values {    
-    my $self = shift;                   
-    return $self->{ _branch_features_and_values };     
-}
-
-sub add_to_branch_features_and_values {
-    my $self = shift;                   
-    my $feature_and_value = shift;
-    push @{$self->{ _branch_features_and_values }}, $feature_and_value;
-}
-
-sub get_children {       
-    my $self = shift;                   
-    return $self->{_linked_to};
-}
-
-sub add_child_link {         
-    my ($self, $new_node, ) = @_;                            
-    push @{$self->{_linked_to}}, $new_node;                  
-}
-
-sub delete_all_links {                  
-    my $self = shift;                   
-    $self->{_linked_to} = undef;        
-}
-
-sub display_node {
-    my $self = shift; 
-    my $feature_at_node = $self->get_feature() || " ";
-    my $entropy_at_node = $self->get_entropy();
-    my @class_probabilities = @{$self->get_class_probabilities()};
-    my $serial_num = $self->get_serial_num();
-    my @branch_features_and_values = @{$self->get_branch_features_and_values()};
-    print "\n\nNODE $serial_num:\n   Branch features and values to this node: @branch_features_and_values\n   Class probabilities at current node: @class_probabilities\n   Entropy at current node: $entropy_at_node\n   Best feature test at current node: $feature_at_node\n\n";
-}
-
-sub display_decision_tree {
-    my $self = shift;
-    my $offset = shift;
-    my $serial_num = $self->get_serial_num();
-    if (@{$self->get_children()}) {
-        my $feature_at_node = $self->get_feature() || " ";
-        my $entropy_at_node = $self->get_entropy();
-        my @class_probabilities = @{$self->get_class_probabilities()};
-        print "NODE $serial_num:  $offset  feature: $feature_at_node   entropy: $entropy_at_node  class probs: @class_probabilities\n";
-        $offset = $offset . "   ";
-        foreach my $child (@{$self->get_children()}) {
-            $child->display_decision_tree($offset);
-        }
-    } else {
-        my $entropy_at_node = $self->get_entropy();
-        my @class_probabilities = @{$self->get_class_probabilities()};
-        print "NODE $serial_num:  $offset  entropy: $entropy_at_node  class probs: @class_probabilities\n";
-    }
-}
-
 1;
 
 =pod
 =head1 NAME
 
-Algorithm::DecisionTree - A Perl module for constructing a
-decision tree from multidimensional training data and for
-using the decision tree thus constructed for classifying new
-data.
+Algorithm::DecisionTree - A Perl module for constructing a decision tree from
+multidimensional training data and for using the decision tree thus constructed for
+classifying new data.
 
 =head1 SYNOPSIS
 
   # FOR CONSTRUCTING A DECISION TREE AND FOR CLASSIFYING A SAMPLE:
 
-      my $training_datafile = "training.dat";
+  # If your training data includes numeric features (a feature is numeric if it can
+  # take any floating point value over an interval), you are expected to supply your
+  # training data through a CSV file and your call for constructing a decision tree
+  # will look like:
+
+      my $training_datafile = "stage3cancer.csv";
+
       my $dt = Algorithm::DecisionTree->new( 
-                               training_datafile => $training_datafile,
-                               debug1 => 1,
-      );
+                              training_datafile => $training_datafile,
+                              csv_class_column_index => 2,
+                              csv_columns_for_features => [3,4,5,6,7,8],
+                              entropy_threshold => 0.01,
+                              max_depth_desired => 8,
+                              symbolic_to_numeric_cardinality_threshold => 10,
+               );
+
+  # The constructor option `csv_class_column_index' informs the module as to which
+  # column of your CSV file contains the class label.  THE COLUMN INDEXING IS ZERO
+  # BASED.  The constructor option `csv_columns_for_features' specifies which columns
+  # are to be used for feature values.  The first row of the CSV file must specify
+  # the names of the features.  See examples of CSV files in the `examples'
+  # subdirectory.
+
+  # The option `symbolic_to_numeric_cardinality_threshold' is also important.  For
+  # the example shown above, if an ostensibly numeric feature takes on only 10 or
+  # fewer different values in your training datafile, it will be treated like a
+  # symbolic features.  The option `entropy_threshold' determines the granularity
+  # with which the entropies are sampled for the purpose of calculating entropy gain
+  # with a particular choice of decision threshold for a numeric feature or a feature
+  # value for a symbolic feature.
+
+  # After you have constructed an instance of the DecisionTree module, you read in
+  # the training data file and initialize the probability cache by calling:
+
       $dt->get_training_data();
-      $dt->show_training_data();
-      my $root_node = $dt->construct_decision_tree_classifier();
-      $root_node->display_decision_tree("   ");
-      my @test_sample = qw /exercising=>never 
-                            smoking=>heavy 
-                            fatIntake=>heavy 
-                            videoAddiction=>heavy /;
-      $dt->classify($root_node, @test_sample);
+      $dt->calculate_first_order_probabilities();
+      $dt->calculate_class_priors();
 
-  # For the above calls to work, the format in which the training data is made
-  # available to the decision-tree constructor new() must meet certain
-  # assumptions.  (See the training.dat file in the examples directory.)  The
-  # training datafile must declare the class names, the feature names and the
-  # names of the different possible values for the features.  The rest of the
-  # training datafile is expected to contain the training samples in the form of
-  # a multi-column table.
+  # Now you are ready to construct a decision tree for your training data by calling:
 
-  # If your training file specifies a large number of features or a large
-  # number of values for the features, the above constructor call could result
-  # in a decision tree that is simply much too large (and much too slow to
-  # construct).  For such cases, consider using following additional options in
-  # the constructor call shown above:
+      $root_node = $dt->construct_decision_tree_classifier();
 
-      my $dt = Algorithm::DecisionTree->new( 
-                               training_datafile => $training_datafile,
-                               max_depth_desired => some_number,
-                               entropy_threshold => some_value,
-                               debug1 => 1,
-      );
-  
-  # where for max_depth_desired you should choose a number that is less than the
-  # number of features in your training file. This will set the depth of your
-  # decision tree to max_depth_desired. The algorithm will automatically use the
-  # BEST max_depth_desired features --- best in the sense of being the most
-  # discriminative --- for constructing the decision tree.  The parameter
-  # entropy_threshold sets the granularity with which the entropies will be
-  # sampled.  Its default value is 0.001.  The larger the value you choose for
-  # entropy_threshold, the smaller the tree.
+  # where $root_node is an instance of DTNode class that is also defined in the
+  # module file.  Now you are ready to classify a data record.  Let's say that your
+  # data record looks like:
+
+      my @test_sample  = qw /  g2=4.2
+                               grade=2.3
+                               gleason=4
+                               eet=1.7
+                               age=55.0
+                               ploidy=diploid /;
+
+  # You can classify it by calling:
+
+      my $classification = $dt->classify($root_node, \@test_sample);
+
+  # The call to `classify()' returns a reference to a hash whose keys are the class
+  # names and the values the associated classification probabilities.  This hash also
+  # includes another key-value pair for the solution path from the root node to the
+  # leaf node at which the final classification was carried out.
 
 
-  # FOR GENERATING TRAINING DATA:
+  # FOR THE CASE OF PURELY SYMBOLIC FEATURES:
 
-      use Algorithm::DecisionTree;
-      my $parameter_file = "param.txt";
-      my $output_data_file = "training.dat";
-      my $training_data_gen = Algorithm::DecisionTree->training_data_generator( 
-                                  output_datafile => $output_data_file,
-                                  parameter_file    => $parameter_file,
-                                  number_of_training_samples => 35,
-      );
-      $training_data_gen->read_parameter_file();
-      $training_data_gen->gen_training_data();
-      $training_data_gen->write_training_data_to_file(); 
+  # If your features are purely symbolic, you can continue to use the same
+  # constructor syntax that was used in the older versions of this module.  However,
+  # your old `.dat' training files will not work with the new version.  The good news
+  # is that with just a small fix, you can continue to use them.  The fix and why it
+  # was needed is described in the file README_for_dat_files in the `examples'
+  # directory.
 
-  # For the above calls to work, the parameter file must obey certain
-  # assumptions.  (See the param.txt file in the examples directory.) The
-  # parameter file must declare the class names, the class priors, the feature
-  # names and the different possible values for the features.  The parameter
-  # file is also expected to present information on how you want the data
-  # vectors to be biased for the different classes.
-
-
-  # FOR GENERATING TEST DATA:
-
-      use Algorithm::DecisionTree;
-      my $parameter_file = "param.txt";
-      my $output_test_datafile = "testdata.dat";
-      my $output_class_label_file = "test_data_class_labels.dat";
-      my $test_data_gen = Algorithm::DecisionTree->test_data_generator(
-                   output_test_datafile    => $output_test_datafile,
-                   output_class_label_file => $output_class_label_file,
-                   parameter_file          => $parameter_file,
-                   write_to_file           => 1,
-                   number_of_test_samples  => 10,
-                   debug1                  => 1,
-      );
-      $test_data_gen->read_parameter_file();
-      $test_data_gen->gen_test_data();
-      $test_data_gen->write_test_data_to_file();
-
-  # The test data is deposited without the class labels in the file named for
-  # the parameter output_test_datafile.  The class labels are deposited in a
-  # separate file named for the parameter output_class_label_file.  The class
-  # names, the feature names, the feature values, and the probabilistic bias
-  # used for the test data are according to the information placed in the
-  # parameter file.
 
 =head1 CHANGES
 
-Version 1.71 fixes a bug in the code that was triggered by 0
-being declared as one of the features values in the training
-datafile. Version 1.71 also include an additional safety
-feature that is useful for training datafiles that contain a
-very large number of features.  The new version makes sure
-that the number of values you declare for each sample record
-matches the number of features declared at the beginning of
-the training datafile.
+Version 2.0 is a major rewrite of this module.  Now you can use both numeric and
+symbolic features for constructing a decision tree. A feature is numeric if it can
+take any floating-point value over an interval.
 
-Version 1.7 includes safety checks on the consistency of the
-data you place in your training datafile. When a training
-file contains thousands of samples, it is difficult to
-manually check that you used the same class names in your
-sample records that you declared at top of your training
-file or that the values you have for your features are legal
-vis-a-vis the earlier declarations of the values in the
-training file.  Another safety feature incorporated in this
-version is the non-consideration of classes that are
-declared at the top of the training file but that have no
-sample records in the file.
+Version 1.71 fixes a bug in the code that was triggered by 0 being declared as one of
+the features values in the training datafile. Version 1.71 also include an additional
+safety feature that is useful for training datafiles that contain a very large number
+of features.  The new version makes sure that the number of values you declare for
+each sample record matches the number of features declared at the beginning of the
+training datafile.
 
-Version 1.6 uses probability caching much more extensively
-compared to the previous versions.  This should result in
-faster construction of large decision trees.  Another new
-feature in Version 1.6 is the use of a decision tree for
-interactive classification. In this mode, after you have
-constructed a decision tree from the training data, the user
-is prompted for answers to the questions pertaining to the
+Version 1.7 includes safety checks on the consistency of the data you place in your
+training datafile. When a training file contains thousands of samples, it is
+difficult to manually check that you used the same class names in your sample records
+that you declared at top of your training file or that the values you have for your
+features are legal vis-a-vis the earlier declarations of the values in the training
+file.  Another safety feature incorporated in this version is the non-consideration
+of classes that are declared at the top of the training file but that have no sample
+records in the file.
+
+Version 1.6 uses probability caching much more extensively compared to the previous
+versions.  This should result in faster construction of large decision trees.
+Another new feature in Version 1.6 is the use of a decision tree for interactive
+classification. In this mode, after you have constructed a decision tree from the
+training data, the user is prompted for answers to the questions pertaining to the
 feature tests at the nodes of the tree.
 
-Some key elements of the documentation were cleaned up and
-made more readable in Version 1.41.  The implementation code
-remains unchanged from Version 1.4.
+Some key elements of the documentation were cleaned up and made more readable in
+Version 1.41.  The implementation code remains unchanged from Version 1.4.
 
-Version 1.4 should make things faster (and easier) for folks
-who want to use this module with training data that creates
-very large decision trees (that is, trees with tens of
-thousands or more decision nodes).  The speedup in Version
-1.4 has been achieved by eliminating duplicate calculation
-of probabilities as the tree grows.  In addition, this
-version provides an additional constructor parameter,
-C<max_depth_desired> for controlling the size of the
-decision tree.  This is in addition to the tree size
-control achieved by the parameter C<entropy_threshold> that
-was introduced in Version 1.3.  Since large decision trees
-can take a long time to create, you may find yourself
-wishing you could store the tree you just created in a disk
-file and that, subsequently, you could use the stored tree
-for classification work.  The C<examples> directory contains
-two scripts, C<store_dt_on_disk.pl> and
-C<classify_from_disk_stored_dt.pl>, that show how you can do
-exactly that with the help of Perl's C<Storable> module.
+Version 1.4 should make things faster (and easier) for folks who want to use this
+module with training data that creates very large decision trees (that is, trees with
+tens of thousands or more decision nodes).  The speedup in Version 1.4 has been
+achieved by eliminating duplicate calculation of probabilities as the tree grows.  In
+addition, this version provides an additional constructor parameter,
+C<max_depth_desired> for controlling the size of the decision tree.  This is in
+addition to the tree size control achieved by the parameter C<entropy_threshold> that
+was introduced in Version 1.3.  Since large decision trees can take a long time to
+create, you may find yourself wishing you could store the tree you just created in a
+disk file and that, subsequently, you could use the stored tree for classification
+work.  The C<examples> directory contains two scripts, C<store_dt_on_disk.pl> and
+C<classify_from_disk_stored_dt.pl>, that show how you can do exactly that with the
+help of Perl's C<Storable> module.
 
-Version 1.3 addresses the issue that arises when the header
-of a training datafile declares a certain possible value for
-a feature but that (feature,value) pair does NOT show up
-anywhere in the training data.  Version 1.3 also makes it
-possible for a user to control the size of the decision tree
-by changing the value of the parameter C<entropy_threshold.>
-Additionally, Version 1.3 includes a method called
-C<determine_data_condition()> that displays useful
-information regarding the size and some other attributes of
-the training data.  It also warns the user if the training
-data might result in a decision tree that would simply be
-much too large --- unless the user controls the size with
-the entropy_threshold parameter.
+Version 1.3 addresses the issue that arises when the header of a training datafile
+declares a certain possible value for a feature but that (feature,value) pair does
+NOT show up anywhere in the training data.  Version 1.3 also makes it possible for a
+user to control the size of the decision tree by changing the value of the parameter
+C<entropy_threshold.> Additionally, Version 1.3 includes a method called
+C<determine_data_condition()> that displays useful information regarding the size and
+some other attributes of the training data.  It also warns the user if the training
+data might result in a decision tree that would simply be much too large --- unless
+the user controls the size with the entropy_threshold parameter.
 
-In addition to the removal of a couple of serious bugs,
-version 1.2 incorporates a number of enhancements: (1)
-Version 1.2 includes checks on the names of the features and
-values used in test data --- this is the data you want to
-classify with the decision tree classifier constructed by
-this module.  (2) Version 1.2 includes a separate
-constructor for generating test data.  To make it easier to
-generate test data whose probabilistic parameters may not be
-identical to that used for the training data, I have used
-separate routines for generating the test data.  (3) Version
-1.2 also includes in its examples directory a script that
-classifies the test data in a file and outputs the class
-labels into another file.  This is for folks who do not wish
-to write their own scripts using this module. (4) Version
-1.2 also includes addition to the documentation regarding
-the issue of numeric values for features.
+In addition to the removal of a couple of serious bugs, version 1.2 incorporates a
+number of enhancements: (1) Version 1.2 includes checks on the names of the features
+and values used in test data --- this is the data you want to classify with the
+decision tree classifier constructed by this module.  (2) Version 1.2 includes a
+separate constructor for generating test data.  To make it easier to generate test
+data whose probabilistic parameters may not be identical to that used for the
+training data, I have used separate routines for generating the test data.  (3)
+Version 1.2 also includes in its examples directory a script that classifies the test
+data in a file and outputs the class labels into another file.  This is for folks who
+do not wish to write their own scripts using this module. (4) Version 1.2 also
+includes addition to the documentation regarding the issue of numeric values for
+features.
 
+
+=head1 SPECIAL USAGE NOTE
+
+For those transitioning from the older versions of this module, if your training data
+consists of numeric features, or has a combination of numeric and symbolic features,
+you MUST use a CSV file to supply your data to the module.  Additionally, this CSV
+file must satisfy certain formatting constraints.  See C<README_for_CSV_files> in the
+C<examples> directory for what these formatting restrictions are.  And, even if your
+training data is purely symbolic, your old-style `C<.dat>' training files will not
+work with the new module.  See C<README_for_dat_files> in the C<examples> directory
+for the formatting related to the new `C<.dat>' files.
 
 =head1 DESCRIPTION
 
-B<Algorithm::DecisionTree> is a I<perl5> module for
-constructing a decision tree from a training datafile
-containing multidimensional data.  In one form or another,
-decision trees have been around for about fifty
-years. However, their popularity during the last decade is
-owing to the entropy-based method proposed by Ross Quinlan
-for their construction.  Fundamental to Quinlan's approach
-is the notion that a decision node in a tree should be split
-only if the entropy at the ensuing child nodes will be less
-than the entropy at the node in question.  The
-implementation presented here is based on the same idea.
+B<Algorithm::DecisionTree> is a I<perl5> module for constructing a decision tree from
+a training datafile containing multidimensional data.  In one form or another,
+decision trees have been around for about fifty years.  From a statistical
+perspective, they are closely related to classification and regression by recursive
+partitioning of multidimensional data.  Early work that demonstrated the usefulness
+of recursive partitioning of data for the purposes of classification and regression
+can be traced, in the statistics community, to the contributions by Terry Therneau in
+the early 1980's and, in the machine learning community, to the work of Ross Quinlan
+in the mid 1990's.
 
-For those not familiar with decision tree ideas, the
-traditional way to classify multidimensional data is to
-start with a feature space whose dimensionality is the same
-as that of the data.  Each feature in this space would
-correspond to the attribute that each dimension of the data
-measures.  You then use the training data to carve up the
-feature space into different regions, each corresponding to
-a different class.  Subsequently, when you are trying to
-classify a new data sample, you locate it in the feature
-space and find the class label of the region to which it
-belongs.  One can also give the data point the same class
-label as that of the nearest training sample.  (This is
-referred to as the nearest neighbor classification.)
+For those not familiar with decision tree ideas, the traditional way to classify
+multidimensional data is to start with a feature space whose dimensionality is the
+same as that of the data.  Each feature in this space corresponds to the attribute
+that each dimension of the data measures.  You then use the training data to carve up
+the feature space into different regions, each corresponding to a different class.
+Subsequently, when you try to classify a new data sample, you locate it in the
+feature space and find the class label of the region to which it belongs.  One can
+also give the new data point the same class label as that of the nearest training
+sample. This is referred to as the nearest neighbor classification.
 
-A decision tree classifier works differently.  When you
-construct a decision tree, you select for the root node a
-feature test that can be expected to maximally
-disambiguate the class labels that could be associated with
-the data you are trying to classify.  You then attach to the
-root node a set of child nodes, one for each value of the
-feature you chose at the root node. Now at each child node
-you pose the same question that you posed when you found the
-best feature to use at the root node: What feature at the
-child node in question would maximally disambiguate the
-class labels to be associated with a given data vector
-assuming that the data vector passed the root node on the
-branch that corresponds to the child node in question.  The
-feature that is best at each node is the one that causes the
-maximal reduction in class entropy at that node.
+A decision tree classifier works differently.  When you construct a decision tree,
+you select for the root node a feature test that partitions the training data in a
+way that causes maximal disambiguation of the class labels associated with the data.
+In terms of information content as measured by entropy, such a feature test would
+cause maximum reduction in class entropy in going from all of the training data taken
+together to the data as partitioned by the feature test.  You then drop from the root
+node a set of child nodes, one for each partition of the training data created by the
+feature test at the root node. When your features are purely symbolic, you'll have
+one child node for each value of the feature chosen for the feature test at the root.
+When the test at the root involves a numeric feature, you find the decision threshold
+for the feature that best bipartitions the data and you drop from the root node two
+child nodes, one for each partition.  Now at each child node you pose the same
+question that you posed when you found the best feature to use at the root: Which
+feature at the child node in question would maximally disambiguate the class labels
+associated with the training data corresponding to that child node?
 
-As the reader would expect, the two key steps in any
-approach to decision-tree based classification are the
-construction of the decision tree itself from a file
-containing the training data, and then using the decision
-tree thus obtained for classifying the data.
+As the reader would expect, the two key steps in any approach to decision-tree based
+classification are the construction of the decision tree itself from a file
+containing the training data, and then using the decision tree thus obtained for
+classifying the data.
 
-In addition to the above two key steps, the implementation
-presented here also allows you to generate your own training
-data. Generating your own training data, using it for
-constructing a decision-tree classifier and subsequently
-testing the classifier on a test set of data is a good way
-to develop greater proficiency with decision trees.
-
-What is cool about decision tree classification is that it
-gives you soft classification, meaning it may associate more
-than one class label with a given data vector.  When this
-happens, it may mean that your classes are indeed
-overlapping in the underlying feature space.  It could also
-mean that you simply have not supplied sufficient training
-data to the decision tree classifier.  For a tutorial
-introduction to how a decision tree is constructed and used,
-visit
+What is cool about decision tree classification is that it gives you soft
+classification, meaning it may associate more than one class label with a given data
+vector.  When this happens, it may mean that your classes are indeed overlapping in
+the underlying feature space.  It could also mean that you simply have not supplied
+sufficient training data to the decision tree classifier.  For a tutorial
+introduction to how a decision tree is constructed and used, visit
 L<https://engineering.purdue.edu/kak/DecisionTreeClassifiers.pdf>
+
+This module also allows you to generate your own synthetic training data. Generating
+your own training data, using it for constructing a decision-tree classifier and
+subsequently testing the classifier on a test set of data is a good way to develop
+greater proficiency with decision trees.
 
 
 =head1 WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE
 
-Consider the following scenario: Let's say you are running a
-small investment company that employs a team of
-stockbrokers who make buy/sell decisions for the customers
-of your company.  Assume that your company has asked the
-traders to make each investment decision on the basis of the
-following four criteria:
+If you are new to the concept of a decision tree, their practical utility is best
+understood with an example that only involves symbolic features. However, as
+mentioned earlier, this version of the module allows you to use both symbolic and
+numeric features.
+
+Consider the following scenario: Let's say you are running a small investment company
+that employs a team of stockbrokers who make buy/sell decisions for the customers of
+your company.  Assume that your company has asked the traders to make each investment
+decision on the basis of the following four criteria:
 
   price_to_earnings_ratio   (P_to_E)
 
@@ -1743,17 +3302,14 @@ following four criteria:
 
   market_share              (MS)
 
-Since you are the boss, you keep track of the buy/sell
-decisions made by the individual traders.  But one
-unfortunate day, all of your traders decide to quit because
-you did not pay them enough.  So what do you do?  If you had
-a module like the one here, you could still run your company
-and do so in such a way that, on the average, would do
-better than any of the individual traders who worked for
-your company.  This is what you do: You pool together the
-individual trader buy/sell decisions you have accumulated
-during the last one year.  This pooled information is likely
-to look like:
+Since you are the boss, you keep track of the buy/sell decisions made by the
+individual traders.  But one unfortunate day, all of your traders decide to quit
+because you did not pay them enough.  So what do you do?  If you had a module like
+the one here, you could still run your company and do so in such a way that, on the
+average, would do better than any of the individual traders who worked for your
+company.  This is what you do: You pool together the individual trader buy/sell
+decisions you have accumulated during the last one year.  This pooled information is
+likely to look like:
 
 
   example      buy/sell     P_to_E     P_to_S     R_on_E      MS
@@ -1765,168 +3321,110 @@ to look like:
   ....
   ....
 
-This data would constitute your training file. You could feed this
-file into the module by calling: 
+This data would constitute your training file. You could feed this file into the
+module by calling:
 
     my $dt = Algorithm::DecisionTree->new( 
                                           training_datafile => $training_datafile,
                                          );
     $dt->get_training_data(); 
+    $dt->calculate_first_order_probabilities();
+    $dt->calculate_class_priors();
 
-and then construct a decision tree by calling:
+Subsequently, you would construct a decision tree by calling:
 
     my $root_node = $dt->construct_decision_tree_classifier();
 
-Now you and your company (with practically no employees) are
-ready to service the customers again. Suppose your computer
-needs to make a buy/sell decision about an investment
-prospect that is best described by:
+Now you and your company (with practically no employees) are ready to service the
+customers again. Suppose your computer needs to make a buy/sell decision about an
+investment prospect that is best described by:
 
-    price_to_earnings_ratio   =>  low
-    price_to_sales_ratio      =>  very_low
-    return_on_equity          =>  none
-    market_share              =>  medium    
+    price_to_earnings_ratio  =  low
+    price_to_sales_ratio     =  very_low
+    return_on_equity         =  none
+    market_share             =  medium    
 
-All that your computer would need to do would be to
-construct a data vector like
+All that your computer would need to do would be to construct a data vector like
 
-   my @data =   qw / P_to_E=>low
-                     P_to_S=>very_low
-                     R_on_E=>none
-                     MS=>medium /;
+   my @data =   qw / P_to_E=low
+                     P_to_S=very_low
+                     R_on_E=none
+                     MS=medium /;
 
 and call the decision tree classifier you just constructed by
 
-    $dt->classify($root_node, @data); 
+    $dt->classify($root_node, \@data); 
 
-The answer returned will be 'buy' and 'sell', along with the
-associated probabilities.  So if the probability of 'buy' is
-considerably greater than the probability of 'sell', that's
-what you should instruct your computer to do.
+The answer returned will be 'buy' and 'sell', along with the associated
+probabilities.  So if the probability of 'buy' is considerably greater than the
+probability of 'sell', that's what you should instruct your computer to do.
 
-The chances are that, on the average, this approach would
-beat the performance of any of your individual traders who
-worked for you previously since the buy/sell decisions made
-by the computer would be based on the collective wisdom of
-all your previous traders.  B<DISCLAIMER: There is obviously
-a lot more to good investing than what is captured by the
-silly little example here. However, it does the convey the
+The chances are that, on the average, this approach would beat the performance of any
+of your individual traders who worked for you previously since the buy/sell decisions
+made by the computer would be based on the collective wisdom of all your previous
+traders.  B<DISCLAIMER: There is obviously a lot more to good investing than what is
+captured by the silly little example here. However, it does nicely the convey the
 sense in which the current module could be used.>
 
-=head1 WHAT HAPPENS IF THE NUMBER OF FEATURES AND/OR VALUES IS LARGE
+=head1 SYMBOLIC FEATURES VERSUS NUMERIC FEATURES
 
-If C<n> is the number of features and C<m> the largest
-number for the possible values for any of the features,
-then, B<in only the worst case>, the algorithm would want to
-construct C<m**n> nodes.  In other words, in the worst case,
-the size of the decision tree grows exponentially as you
-increase either the number of features or the number of
-possible values for the features.  That is the bad news.
-The B<good news> is that you have two constructor parameters
-at your disposal for controlling the size of the decision
-tree: The parameter C<max_depth_desired> controls the depth
-of the constructed tree from its root node, and the
-parameter C<entropy_threshold> controls the granularity with
-which the entropy space will be sampled.  The smaller the
-C<max_depth_desired> and the larger the
-C<entropy_threshold>, the smaller the size of the decision
-tree.  The default value for C<max_depth_desired> is the
-number of features specified in the training datafile, and
-the the default value for C<entropy_threshold> is 0.01.
+A feature is symbolic when its values are compared using string comparison operators.
+By the same token, a feature is numeric when its values are compared using numeric
+comparison operators.  Having said that, features that take only a small number of
+numeric values in the training data can be treated symbolically provided you are
+careful about handling their values in the test data.  At the least, you have to set
+the test data value for such a feature to its closest value in the training data.
 
-The users of this module with a need to create very large
-decision trees should also consider storing the tree once
-constructed in a diskfile and then using the stored tree for
-classification work.  The scripts C<store_dt_on_disk.pl> and
-C<classify_from_disk_stored_dt.pl> in the C<examples>
-directory show you how you can do that with the help of
-Perl's Storable module.
-
-B<Also note that it is always a good idea to keep the
-C<debug1> option set anytime you are experimenting with a
-new datafile> --- especially if your training datafile is
-likely to create an inordinately large decision tree.
-
-
-=head1 WHAT HAPPENS WHEN THE FEATURE VALUES ARE NUMERIC
-
-The current module will treat a numeric value for a feature
-as just a string.  In that sense, there is no difference
-between a string value for a feature and a numeric value.
-This would obviously make the module unsuitable for
-applications in which a feature may take on a numeric value
-from a very large set of such values and you want feature
-values to be compared using numeric comparison predicates as
-opposed to string comparison predicates.  (Consider, for
-example, using color as an object feature in a computer
-vision application.)  The decision trees for applications in
-which the feature values are primarily numerical in nature
-are constructed differently, as explained in the tutorial at
-L<https://engineering.purdue.edu/kak/DecisionTreeClassifiers.pdf>
-
+The constructor parameter C<symbolic_to_numeric_cardinality_threshold> let's you tell
+the module when to consider an otherwise numeric feature symbolically. Suppose you
+set this parameter to 10, that means that all numeric looking features that take 10
+or fewer different values in the training datafile will be considered to be symbolic
+features.  See the tutorial at
+L<https://engineering.purdue.edu/kak/DecisionTreeClassifiers.pdf> for further
+information on the implementation issues related to the symbolic and numeric
+features.
 
 =head1 METHODS
 
-The module provides the following methods for decision-tree
-induction from training data in a diskfile, for data
-classification with the decision tree, and for generating
-your own training data:
+The module provides the following methods for constructing a decision tree from
+training data in a disk file and for classifying new data records with the decision
+tree thus constructed:
 
 =over
 
 =item B<new():>
 
     my $dt = Algorithm::DecisionTree->new( 
-                                          training_datafile => $training_datafile,
-                                         );
+                              training_datafile => $training_datafile,
+                              csv_class_column_index => 2,
+                              csv_columns_for_features => [3,4,5,6,7,8],
+                              entropy_threshold => 0.01,
+                              max_depth_desired => 8,
+                              symbolic_to_numeric_cardinality_threshold => 10,
+            );
 
-A call to C<new()> constructs a new instance of the
-C<Algorithm::DecisionTree> class.  For this call to make
-sense, the training data in the training datafile must be
-according to a certain format that is shown below.  (Also
-see the file C<training.dat> in the C<examples> directory.)
+A call to C<new()> constructs a new instance of the C<Algorithm::DecisionTree> class.
+For this call to make sense, the training data in the training datafile must be
+according to a certain format.  For the format, see the files C<training.csv>
+C<training.dat> in the C<examples> directory.  B<If your training data includes
+numeric features, you must use a CSV file for supplying the data to the module.> The
+previous versions of this module used `C<.dat>' files for the training data.  You can
+still use your old `C<.dat>' files provided you modify them a little bit.  See
+C<README_for_dat_files> in the C<examples> directory for how to modify your old
+C<.dat> files.
 
 =item B<get_training_data():>
 
-After you have constructed a new instance of the C<Algorithm::DecisionTree>
-class, you must now read in the training data that is contained in the
-file named above.  This you do by:
+After you have constructed a new instance of the C<Algorithm::DecisionTree> class,
+you must now read in the training data that is the file named in the call to the
+constructor.  This you do by:
 
     $dt->get_training_data(); 
 
-IMPORTANT: The training datafile must be in a format that
-makes sense to the decision tree constructor.  The
-information in this file should look like
-
-    Class names: malignant benign
-
-    Feature names and their values:
-        videoAddiction => none low medium heavy
-        exercising => never occasionally regularly
-        smoking => heavy medium light never
-        fatIntake => low medium heavy
-
-
-    Training Data:
-
-    sample     class      videoAddiction   exercising    smoking   fatIntake
-    ==========================================================================
-
-    sample_0   benign     medium           occasionally  heavy     low
-    sample_1   malignant  none             occasionally  heavy     medium
-    sample_2   benign     low              occasionally  light     heavy
-    sample_3   malignant  medium           occasionally  heavy     heavy
-    ....
-    ....
-
-
-IMPORTANT: Note that the class names, the number of classes,
-the feature names, and the possible values for the features
-can be anything that your data requires them to be.  The
-training data file that is generated by the data generation
-part of the module will be in the format shown above.  More
-on that later.
-
+IMPORTANT: The training datafile must be in a format that makes sense to the decision
+tree constructor.  See the files C<README_for_CSV_files> and C<README_for_dat_files>
+in the C<examples> directory for these formats.  Also see the files C<training.csv>
+and C<training.dat> for examples of such files.
 
 =item B<show_training_data():>
 
@@ -1935,324 +3433,181 @@ call
 
     $dt->show_training_data(); 
 
+=item B<calculate_first_order_probabilities():>
+
+=item B<calculate_class_priors():>
+
+After the module has read the training data file, it needs to initialize the
+probability cache.  This you do by invoking:
+
+    $dt->calculate_first_order_probabilities()
+    $dt->calculate_class_priors() 
 
 =item B<construct_decision_tree_classifier():>
 
-After the training data is digested, it is time to construct 
-a decision tree classifier.  This you do by
+With the probability cache initialized, it is time to construct a decision tree
+classifier.  This you do by
 
     my $root_node = $dt->construct_decision_tree_classifier();
 
-This call returns an instance of type C<Node>.  The C<Node>
-class is defined within the main package file, at its end.
-So, don't forget, that C<$root_node> in the above example
-call will be instantiated to an instance of type C<Node>.
+This call returns an instance of type C<DTNode>.  The C<DTNode> class is defined
+within the main package file.  So, don't forget, that C<$root_node> in the above
+example call will be instantiated to an object of type C<DTNode>.
 
 =item B<$root_nodeC<< -> >>display_decision_tree(" "):>
 
     $root_node->display_decision_tree("   ");
 
-This will display the decision tree in your terminal window
-by using a recursively determined offset for each node as
-the display routine descends down the tree.
+This will display the decision tree in your terminal window by using a recursively
+determined offset for each node as the display routine descends down the tree.
 
-I have intentionally left the syntax fragment C<$root_node>
-in the above call to remind the reader that
-C<display_decision_tree()> is NOT called on the instance of
-the C<DecisionTree> we constructed earlier, but on the
-C<Node> instance returned by the call to
-C<construct_decision_tree_classifier()>.
+I have intentionally left the syntax fragment C<$root_node> in the above call to
+remind the reader that C<display_decision_tree()> is NOT called on the instance of
+the C<DecisionTree> we constructed earlier, but on the C<DTNode> instance returned by
+the call to C<construct_decision_tree_classifier()>.
 
-=item B<classify($root_node, @test_sample):>
+=item B<classify($root_node, \@test_sample):>
 
-    my @test_sample = qw /exercising=>never 
-                          smoking=>heavy 
-                          fatIntake=>heavy 
-                          videoAddiction=>heavy /;
+Let's say you want to classify the following data record:
 
-    my $classification = $dt->classify($root_node, @test_sample);
+    my @test_sample  = qw /  g2=4.2
+                             grade=2.3
+                             gleason=4
+                             eet=1.7
+                             age=55.0
+                             ploidy=diploid /;
 
-where, again, C<$root_node> is an instance of type C<Node>
-returned by the call to
-C<construct_decision_tree_classifier()>.  The variable
-C<$classification> holds a reference to a hash whose keys are
-the class labels and whose values the associated
-probabilities.
+you'd make the following call:
 
+    my $classification = $dt->classify($root_node, \@test_sample);
 
-=item B<determine_data_condition():>
+where, again, C<$root_node> is an instance of type C<DTNode> returned by the call to
+C<construct_decision_tree_classifier()>.  The variable C<$classification> holds a
+reference to a hash whose keys are the class names and whose values the associated
+probabilities.  The hash that is returned by the above call also includes a special
+key-value pair for a key named C<solution_path>.  The value associated with this key
+is an anonymous array that holds the path, in the form of a list of nodes, from the
+root node to the leaf node in the decision tree where the final classification was
+made.
 
-This method, automatically invoked when C<debug1> option is set
-in the call to the decision-tree constructor, displays
-useful information regarding your training data file.  This
-method also warns you if you are trying to construct a
-decision tree that may simply be much too large.  
-
-    $dt->determine_data_condition(); 
 
 =item B<classify_by_asking_questions($root_node):>
 
-This method allows you to use the decision tree constructed
-in an interactive mode.  In this mode, you will be prompted
-for answers to the questions pertaining to the feature tests
-at the nodes of the tree.  The syntax for invoking this
-method is:
+This method allows you to use a decision-tree based classifier in an interactive
+mode.  In this mode, a user is prompted for answers to the questions pertaining to
+the feature tests at the nodes of the tree.  The syntax for invoking this method is:
 
     my $classification = $dt->classify_by_asking_questions($root_node);
 
-where C<$dt> is an instance of the
-C<Algorithm::DecisionTree> class returned by a call to
-C<new()> and C<$root_node> the root node of the decision
-tree returned by a call to
-C<construct_decision_tree_classifier()>.
-
-=item B<training_data_generator():>
-
-The training data generator is created by using its own constructor:
-
-    my $parameter_file = "param2.txt";
-    my $output_data_file = "training.dat";
-    my $training_data_gen = Algorithm::DecisionTree->training_data_generator( 
-                              output_datafile => $output_data_file,
-                              parameter_file    => $parameter_file,
-                              number_of_training_samples => 35,
-    );
-
-=item B<$training_data_genC<< -> >>read_parameter_file():>
-
-After you have constructed an instance of the training data
-generator, you need to ask it to read the parameter file:
-
-    $training_data_gen->read_parameter_file();
-
-The parameter file is expected to be in the following format:
-
-    # comment lines begin with the hash mark
-
-    class names:  malignant benign
-    class priors: 0.4 0.6
-
-    feature: smoking
-    values: heavy medium light never
-
-    feature: exercising
-    values: never occasionally regularly
-
-    feature: fatIntake
-    values: low medium heavy
-
-    feature: videoAddiction
-    values:  none low medium heavy
-
-
-    bias:  class: malignant 
-
-          smoking:    heavy=0.7
-          exercising: never=0.7 
-          fatIntake:  heavy=0.5
-          videoAddiction: 
-
-    bias:  class: benign
-
-          smoking:     heavy=0.1
-          exercising:  regularly=0.7
-          fatIntake:   low=0.6
-          videoAddiction: 
-
-
-See the parameter file C<param.txt> in the C<examples> directory.
-Initially, it might be best to modify that file to suit your
-needs.
-
-IMPORTANT: You can use any names for the classes, can have
-any number of classes, can use any names for the features
-and their values.  
-
-Also note the the important role played by the biasing
-information.  Without the biasing, your training data will
-be uniformly distributed with respect to all of the feature
-values and you will only get ambiguous classifications from
-the resulting decision tree classifier.  The biasing allows
-you to express a higher or lower probability that a
-particular feature value should have for a given class.  The
-probability weight that is unused for each feature is
-distributed uniformly amongst the remaining feature values.
-I did experiment with the idea of assigning probability
-weights to multiple (or even all) of the values for a given
-feature --- it does not add to the educational value you
-derive from the resulting training data.
-
-NOTE: if you do NOT express a bias for a feature (as is the
-case with the feature C<videoAddiction> above), equal weight
-is given to all its values.
-
-=item B<$training_data_genC<< -> >>gen_training_data():>
-
-This call generators the training data from your parameter
-file:
-
-    $training_data_gen->gen_training_data();
-
-=item B<$training_data_genC<< -> >>write_training_data_to_file():>
-
-To write out the training data to a disk file:
-
-    $training_data_gen->write_training_data_to_file();
-
-This call will also display the training data in your
-terminal window if the C<debug1> option is set in the
-training data generator constructor.
-
-=item B<test_data_generator():>
-
-The test data is generated by using its own constructor:
-
-    my $parameter_file = "param.txt";
-    my $output_test_datafile = "testdata1.dat";
-    my $output_class_label_file = "test_data_class_labels.dat";
-
-    my $test_data_gen = Algorithm::DecisionTree->test_data_generator(
-                       output_test_datafile    => $output_test_datafile,
-                       output_class_label_file => $output_class_label_file,
-                       parameter_file          => $parameter_file,
-                       write_to_file           => 1,
-                       number_of_test_samples  => 10,
-    );
-
-=item B<$test_data_genC<< -> >>read_parameter_file():>
-
-After you have constructed an instance of the test data
-generator, you need to ask it to read the parameter file.
-
-    $test_data_gen->read_parameter_file();
-
-This parameter file named in the call to the test-data
-generator constructor must possess the same structure as for
-generating the training data.  In most cases, you would want
-to use the same parameter file both for generating the training
-data and the test data.
-
-=item B<$test_data_genC<< -> >>gen_test_data():>
-
-This call generates the test data from your parameter file:
-
-    $training_data_gen->gen_training_data();
-
-=item B<$test_data_genC<< -> >>write_test_data_to_file():>
-
-To write out the test data to a disk file:
-
-    $test_data_gen->write_test_data_to_file();
-
-This call will also display the test data in your terminal
-window if the C<debug1> option is set in the test data
-generator constructor.
-
+where C<$dt> is an instance of the C<Algorithm::DecisionTree> class returned by a
+call to C<new()> and C<$root_node> the root node of the decision tree returned by a
+call to C<construct_decision_tree_classifier()>.
 
 =back
 
+=head1 GENERATING SYNTHETIC TRAINING AND TEST DATA
+
+The module file contains the following additional classes: (1)
+C<TrainingDataGeneratorNumeric>, (2) C<TrainingDataGeneratorSymbolic>, and (3)
+C<TestDataGeneratorSymbolic> for generating synthetic training and test data.  
+
+The class C<TrainingDataGeneratorNumeric> outputs a CSV training data file for
+experimenting with numeric features.  The numeric values are generated using a
+multivariate Gaussian distribution whose mean and covariance are specified in a
+parameter file. See the file C<param_numeric.txt> in the C<examples> directory for an
+example of such a parameter file.  Note that the dimensionality of the data is
+inferred from the information you place in the parameter file.
+
+The class C<TrainingDataGeneratorSymbolic> generates synthetic training data for the
+purely symbolic case.  The relative frequencies of the different possible values for
+the features is controlled by the biasing information you place in a parameter file.
+See C<param_symbolic.txt> for an example of such a file.  The class
+C<TestDataGeneratorSymbolic> is just a convenience class for creating test data ---
+that is, data records without class labels.  The labels are placed in a separate
+file.
+
+
 =head1 HOW THE CLASSIFICATION RESULTS ARE DISPLAYED
 
-It depends on whether you apply the classifier at once to
-all the data samples in a file, or whether you feed one data
-sample at a time into the classifier.
+It depends on whether you apply the classifier at once to all the data samples in a
+file, or whether you feed one data sample at a time into the classifier.
 
-For large test datasets, you would obviously want to process
-an entire file of test data at a time.  The best way to do
-this is to follow my script
+In general, the classifier returns soft classification for a test data vector.  What
+that means is that, in general, the classifier will list all the classes to which a
+given data vector could belong and the probability of each such class label for the
+data vector. Run the examples scripts in the Examples directory to see how the output
+of classification can be displayed.
 
-    classify_test_data_in_a_file.pl
+For large test datasets, you would obviously want to process an entire file of test
+data at a time.  For the case of purely symbolic data, the best way to do this is to
+follow my script
 
-in the examples directly.  This script requires three
-command-line arguments, the first argument names the
-training datafile, the second the test datafile, and the
-third in which the classification results will be deposited.
+        classify_test_data_in_a_file.pl
 
-You can also invoke the classifier on one data sample at a
-time.  A call such as
+in the C<examples> directory.  This script requires three command-line arguments, the
+first argument names the training datafile, the second the test datafile, and the
+third in which the classification results will be deposited.  The test datafile must
+mention the order in which the features values are presented.  For an example, see
+the file C<testdata.dat> in the C<examples> directory.
 
-    my @test_sample = qw /exercising=>never 
-                          smoking=>heavy 
-                          fatIntake=>heavy 
-                          videoAddiction=>heavy /;
+With regard to the soft classifications returned by this classifier, if the
+probability distributions for the different classes overlap in the underlying feature
+space, you would want the classifier to return all of the applicable class labels for
+a data vector along with the corresponding class probabilities.  Another reason for
+why the decision tree classifier may associate significant probabilities with
+multiple class labels is that you used inadequate number of training samples to
+induce the decision tree.  The good thing is that the classifier does not lie to you
+(unlike, say, a hard classification rule that would return a single class label
+corresponding to the partitioning of the underlying feature space).  The decision
+tree classifier give you the best classification that can be made given the training
+data you fed into it.
 
-    my $classification = $dt->classify($root_node, @test_sample);
-    print "The classification:\n";
-    foreach my $class ($dt->get_class_names()) {
-        print "    $class with probability $classification->{$class}\n"; 
-    }    
 
-will print out the classification results in the following form:
+=head1 THE EXAMPLES DIRECTORY
 
-    The classification:
-        malignant with probability 0.744186046511628
-        benign with probability 0.255813953488372
+See the C<examples> directory in the distribution for how to construct a decision
+tree, and how to then classify new data using the decision tree.  To become more
+familiar with the module, run the scripts
 
-Note again the soft classification returned.  That is, if
-the probability distributions for the different classes
-overlap in the underlying feature space, the classifier will
-return all of the applicable class labels for a data vector
-along with the corresponding class probabilities.  Another
-reason for why the decision tree classifier may associate
-significant probabilities with multiple class labels is that
-you used inadequate number of training samples to induce the
-decision tree.  B<The good thing is that the classifier does
-not lie to you> (unlike, say, a hard classification rule
-that would corresponding to a partitioning of the underlying
-feature space).  The decision tree classifier give you the
-best classification that can be made given the training data
-you fed into it.
+        construct_dt_and_classify_one_sample_case1.pl
+        construct_dt_and_classify_one_sample_case2.pl
+        construct_dt_and_classify_one_sample_case3.pl
+        construct_dt_and_classify_one_sample_case4.pl
 
-=head1 EXAMPLES
+The first script is for the purely symbolic case, the second for the case that
+involves both numeric and symbolic features, the third for the case of purely numeric
+features, and the last for the case when the training data is synthetically generated
+by the script C<generate_training_data_numeric.pl>.
 
-See the C<examples> directory in the distribution for how to
-generate the training data, how to induce a decision tree,
-and how to then classify new data using the decision tree.
+Next run the following script as it is
 
-To become more familiar with the module, run the script
+       classify_test_data_in_a_file.pl   training.dat   testdata.dat   out.txt
 
-    training_data_generator.pl
+This call will first construct a decision tree using the training data in the file
+C<training.dat>.  It will then calculate the class label for each data record in the
+file C<testdata.dat>.  The estimated class labels will be written out to the file
+C<out.txt>.
 
-to generate a training datafile according to the information
-placed in the file param.txt.  Then run the script 
+The following script in the C<examples> directory
 
-    construct_dt_and_classify_one_sample.pl
+        classify_by_asking_questions.pl
 
-to classify a new data sample that is in the script.  Next
-generate a test dataset by calling
+shows how you can use a decision-tree classifier interactively.  In this mode, you
+first construct the decision tree from the training data and then the user is
+prompted for answers to the feature tests at the nodes of the tree.
 
-    generate_test_data.pl
+The C<examples> directory also contains the following scripts:
 
-This will deposit multiple samples of the test data in a
-file.  You can invoke the classifier on this file by an
-invocation like
+        generate_training_data_numeric.pl
+        generate_training_data_symbolic.pl
+        generate_test_data_symbolic.pl
 
-    classify_test_data_in_a_file.pl   training.dat   testdata.dat   out.txt
+that show how you can use the module to generate synthetic training and test data.
+Synthetic training and test data are generated according to the specifications laid
+out in a parameter file.  There are constraints on how the information is laid out in
+a parameter file.  See the files C<param_numeric.txt> and C<param_symbolic.txt> in
+the C<examples> directory for how to structure these files.
 
-This call will first construct a decision tree using the
-training data in the file C<training.dat>.  It will then
-calculate the class label for each data vector in the file
-C<testdata.dat>.  The estimated class labels will be written
-out to the file C<out.txt>.
-
-The C<examples> directory also contains the script
-C<store_dt_on_disk.pl> that shows how you can use Perl's
-Storable module to store a decision tree in a disk file.
-The file C<classify_from_disk_stored_dt.pl> in the same
-directory shows how you can classify new data vectors with
-the stored decision tree.  This is expected to be extremely
-useful for situations that involve tens of thousands or
-millions of decision nodes.
-
-If you are interested in using a decision tree interactively,
-the following script in the C<examples> directory:
-
-    classify_by_asking_questions.pl
-
-shows how you can do that.  You still have to first construct
-a decision tree from the training data.  Subsequently, the 
-tree classifier will prompt you for answers to the questions
-pertaining to the feature tests at the nodes.
 
 =head1 EXPORT
 
@@ -2260,9 +3615,8 @@ None by design.
 
 =head1 BUGS
 
-Please notify the author if you encounter any bugs.  When
-sending email, please place the string 'DecisionTree' in the
-subject line.
+Please notify the author if you encounter any bugs.  When sending email, please place
+the string 'DecisionTree' in the subject line.
 
 =head1 INSTALLATION
 
@@ -2282,22 +3636,23 @@ if you have root access.  If not,
 
 =head1 THANKS
 
-The bug in version 1.7 whose fix led to version 1.71 was
-discovered by Jeff Pattillo.  Thanks Jeff!
+I wish to thank many users of this module for their feedback.  Many of the
+improvements I have made to the module over the years are a result of the feedback
+received.
 
 =head1 AUTHOR
 
 Avinash Kak, kak@purdue.edu
 
-If you send email, please place the string "DecisionTree" in your
-subject line to get past my spam filter.
+If you send email, please place the string "DecisionTree" in your subject line to get
+past my spam filter.
 
 =head1 COPYRIGHT
 
 This library is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
- Copyright 2012 Avinash Kak
+ Copyright 2013 Avinash Kak
 
 =cut
 

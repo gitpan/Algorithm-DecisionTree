@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-# classify_test_data_in_a_file.pl
+## classify_test_data_in_a_file.pl
 
 #use lib '../blib/lib', '../blib/arch';
 
@@ -17,17 +17,11 @@ my $debug = 0;
 
 my ($training_datafile, $test_datafile, $outputfile) = @ARGV;
 
-#my $training_datafile = "training.dat";
-
-my $dt = Algorithm::DecisionTree->new( 
-                              training_datafile => $training_datafile,
-                              entropy_threshold => 0.1,
-                              max_depth_desired => 3,
-#                             debug1 => 1,                          
-#                             debug2 => 1,
-    );
+my $dt = Algorithm::DecisionTree->new(training_datafile => $training_datafile);
 
 $dt->get_training_data();
+$dt->calculate_first_order_probabilities();
+$dt->calculate_class_priors();
 
 ### UNCOMMENT THE NEXT STATEMENT if you would like to see
 ### the training data that was read from the disk file:
@@ -64,15 +58,16 @@ while (<TESTFILEHANDLE>) {
                   unless @features == @test_sample_entries;
     my @test_sample;
     foreach my $i (0..@features-1) {
-        push @test_sample, "$features[$i]=>$test_sample_entries[$i]";
+        push @test_sample, "$features[$i]=$test_sample_entries[$i]";
     }
-    my $classification = $dt->classify($root_node, @test_sample);
+    my %classification = %{$dt->classify($root_node, \@test_sample)};
     my $result = "$sample_name:  ";
     foreach my $class ($dt->get_class_names()) {
         $result .= sprintf( "$class probability: %.3f    ", 
-                            $classification->{$class});    
+                            $classification{$class});    
     }
-    print "$result\n" if $debug == 1;
+#    print "$result\n" if $debug == 1;
+    print "$result\n";
     print OUTPUTHANDLE "$result\n";
 }
 close TESTFILEHANDLE;
