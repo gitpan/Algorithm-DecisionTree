@@ -4,12 +4,16 @@ examples/construct_dt_and_classify_one_sample_case1.pl
 examples/construct_dt_and_classify_one_sample_case2.pl
 examples/construct_dt_and_classify_one_sample_case3.pl
 examples/construct_dt_and_classify_one_sample_case4.pl
+examples/evaluate_training_data1.pl
+examples/evaluate_training_data2.pl
 examples/generate_test_data_symbolic.pl
 examples/generate_training_data_numeric.pl
 examples/generate_training_data_symbolic.pl
 examples/out.txt
 examples/param_numeric.txt
 examples/param_symbolic.txt
+examples/param_numeric_extremely_overlapping_classes.txt
+examples/param_numeric_strongly_overlapping_classes.txt
 examples/README
 examples/README_for_CSV_files
 examples/README_for_dat_files
@@ -17,6 +21,8 @@ examples/stage3cancer.csv
 examples/test_data_class_labels.dat
 examples/testdata.dat
 examples/training.csv
+examples/training2.csv
+examples/training3.csv
 examples/training.dat
 lib/Algorithm/DecisionTree.pm
 Makefile.PL

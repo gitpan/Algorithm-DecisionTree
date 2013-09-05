@@ -63,7 +63,6 @@ foreach my $which_class (@which_classes) {
     my $classstring = sprintf("%-30s", $which_class);
     my $valuestring = sprintf("%-30s", $classification{$which_class});
     print "     $classstring $valuestring\n";
-
 }
 print "\nSolution path in the decision tree: @solution_path\n";
 print "\nNumber of nodes created: " . $root_node->how_many_nodes() . "\n";

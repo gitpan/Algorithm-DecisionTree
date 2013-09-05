@@ -12,7 +12,7 @@ my $training_datafile = "training.dat";
 
 my $dt = Algorithm::DecisionTree->new( 
                               training_datafile => $training_datafile,
-                              entropy_threshold => 0.001,
+                              entropy_threshold => 0.01,
                               max_depth_desired => 5,
          );
 
