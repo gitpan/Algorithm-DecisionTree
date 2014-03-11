@@ -1,7 +1,7 @@
 package Algorithm::DecisionTree;
 
 #--------------------------------------------------------------------------------------
-# Copyright (c) 2013 Avinash Kak. All rights reserved.
+# Copyright (c) 2014 Avinash Kak. All rights reserved.
 # This program is free software.  You may modify and/or
 # distribute it under the same terms as Perl itself.
 # This copyright notice must remain attached to the file.
@@ -17,7 +17,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '2.1';
+our $VERSION = '2.2';
 
 ############################################   Constructor  ##############################################
 
@@ -2082,11 +2082,11 @@ sub print_nested_array {
 ##  This subclass of the DecisionTree class is used to evaluate the quality of your
 ##  training data by running a 10-fold cross-validation test on it. This test divides
 ##  all of the training data into ten parts, with nine parts used for training a
-##  decision tree and one part used for testing its ability to classify
-##  correctly. This selection of nine parts for training and one part for testing is
-##  carried out in all of the ten different possible ways.  This testing
-##  functionality can also be used to find the best values to use for the constructor
-##  parameters entropy_threshold, max_depth_desired, and
+##  decision tree and one part used for testing its ability to classify correctly.
+##  This selection of nine parts for training and one part for testing is carried out
+##  in all of the ten different possible ways.  This testing functionality can also
+##  be used to find the best values to use for the constructor parameters
+##  entropy_threshold, max_depth_desired, and
 ##  symbolic_to_numeric_cardinality_threshold.
 
 ##  Only the CSV training files can be evaluated in this manner (because only CSV
@@ -2441,14 +2441,15 @@ sub display_decision_tree {
 }
 
 
-##############################  Generate Your Own Numeric Training Data  #################################
+##########################  Generate Your Own Numeric Training and Test Data  ############################
 
-##  See the example script generate_training_data_numeric.pl on how to use this class
-##  for generating your own numeric training data.  The training data is generated in
-##  accordance with the specifications you place in the parameter file that is
-##  supplied as an argument to the constructor of this class.
+##  See the script generate_training_and_test_data_numeric.pl in the examples
+##  directory on how to use this class for generating your own numeric training and
+##  test data.  The training and test data are generated in accordance with the
+##  specifications you place in the parameter file that is supplied as an argument to
+##  the constructor of this class.
 
-package TrainingDataGeneratorNumeric;
+package TrainingAndTestDataGeneratorNumeric;
 
 use strict;                                                         
 use Carp;
@@ -2460,12 +2461,16 @@ sub new {
           "--- perhaps a misspelling\n" 
           if check_for_illegal_params3(@params) == 0;   
     bless {
-        _output_csv_file                   =>   $args{'output_csv_file'} 
-                                                          || croak("output_csv_file required"),
+        _output_training_csv_file          =>   $args{'output_training_csv_file'} 
+                                                   || croak("name for output_training_csv_file required"),
+        _output_test_csv_file              =>   $args{'output_test_csv_file'} 
+                                                   || croak("name for output_test_csv_file required"),
         _parameter_file                    =>   $args{'parameter_file'}
-                                                          || croak("parameter_file required"),
-        _number_of_samples_per_class       =>   $args{'number_of_samples_per_class'} 
-                                                          || croak("number_of_samples_per_class required"),
+                                                         || croak("parameter_file required"),
+        _number_of_samples_for_training    =>   $args{'number_of_samples_for_training'} 
+                                                         || croak("number_of_samples_for_training"),
+        _number_of_samples_for_testing     =>   $args{'number_of_samples_for_testing'} 
+                                                         || croak("number_of_samples_for_testing"),
         _debug                             =>    $args{debug} || 0,
         _class_names                       =>    [],
         _class_names_and_priors            =>    {},
@@ -2476,9 +2481,11 @@ sub new {
 
 sub check_for_illegal_params3 {
     my @params = @_;
-    my @legal_params = qw / output_csv_file
+    my @legal_params = qw / output_training_csv_file
+                            output_test_csv_file
                             parameter_file
-                            number_of_samples_per_class
+                            number_of_samples_for_training
+                            number_of_samples_for_testing
                             debug
                           /;
     my $found_match_flag;
@@ -2585,51 +2592,86 @@ sub read_parameter_file_numeric {
 }
 
 ##  After the parameter file is parsed by the previous method, this method calls on
-##  Math::Random::random_multivariate_normal() to generate the training data
-##  samples. Your training data can be of any number of of dimensions, can have any
-##  mean, and any covariance.
-sub gen_numeric_training_data_and_write_to_csv {
+##  Math::Random::random_multivariate_normal() to generate the training and test data
+##  samples. Your training and test data can be of any number of of dimensions, can
+##  have any mean, and any covariance.  The training and test data must obviously be
+##  drawn from the same distribution.
+sub gen_numeric_training_and_test_data_and_write_to_csv {
     use Math::Random;
     my $self = shift;
-    my %samples_for_class;
+    my %training_samples_for_class;
+    my %test_samples_for_class;
     foreach my $class_name (@{$self->{_class_names}}) {
-        $samples_for_class{$class_name} = [];            
+        $training_samples_for_class{$class_name} = [];
+        $test_samples_for_class{$class_name} = [];
     }
     foreach my $class_name (keys %{$self->{_classes_and_their_param_values}}) {
         my @mean = @{$self->{_classes_and_their_param_values}->{$class_name}->{'mean'}};
         my @covariance = @{$self->{_classes_and_their_param_values}->{$class_name}->{'covariance'}};
-        my @new_data = Math::Random::random_multivariate_normal($self->{_number_of_samples_per_class}, 
-                                                                                   @mean, @covariance );
+        my @new_training_data = Math::Random::random_multivariate_normal(
+              $self->{_number_of_samples_for_training} * $self->{_class_names_and_priors}->{$class_name},
+              @mean, @covariance );
+        my @new_test_data = Math::Random::random_multivariate_normal(
+              $self->{_number_of_samples_for_testing} * $self->{_class_names_and_priors}->{$class_name},
+              @mean, @covariance );
         if ($self->{_debug}) {
-            print "for class $class_name:\n";
-            foreach my $x (@new_data) {print "@$x\n";}
+            print "training data for class $class_name:\n";
+            foreach my $x (@new_training_data) {print "@$x\n";}
+            print "\n\ntest data for class $class_name:\n";
+            foreach my $x (@new_test_data) {print "@$x\n";}
         }
-        $samples_for_class{$class_name} = \@new_data;
+        $training_samples_for_class{$class_name} = \@new_training_data;
+        $test_samples_for_class{$class_name} = \@new_test_data;
     }
-    my @data_records = ();
-    foreach my $class_name (keys %samples_for_class) {
-        foreach my $sample_index (0..$self->{_number_of_samples_per_class}-1) {
-            my @vector = @{$samples_for_class{$class_name}->[$sample_index]};
-            @vector = map {sprintf("%.3f", $_)} @vector;
-            my $data_record = "$class_name," . join(",", @vector) . "\n";
-            push @data_records, $data_record;
+    my @training_data_records = ();
+    my @test_data_records = ();
+    foreach my $class_name (keys %training_samples_for_class) {
+        my $num_of_samples_for_training = $self->{_number_of_samples_for_training} * 
+                                         $self->{_class_names_and_priors}->{$class_name};
+        my $num_of_samples_for_testing = $self->{_number_of_samples_for_testing} * 
+                                         $self->{_class_names_and_priors}->{$class_name};
+        foreach my $sample_index (0..$num_of_samples_for_training-1) {
+            my @training_vector = @{$training_samples_for_class{$class_name}->[$sample_index]};
+            @training_vector = map {sprintf("%.3f", $_)} @training_vector;
+            my $training_data_record = "$class_name," . join(",", @training_vector) . "\n";
+            push @training_data_records, $training_data_record;
+        }
+        foreach my $sample_index (0..$num_of_samples_for_testing-1) {
+            my @test_vector = @{$test_samples_for_class{$class_name}->[$sample_index]};
+            @test_vector = map {sprintf("%.3f", $_)} @test_vector;
+            my $test_data_record = "$class_name," . join(",", @test_vector) . "\n";
+            push @test_data_records, $test_data_record;
         }
     }
-    fisher_yates_shuffle(\@data_records);
+    fisher_yates_shuffle(\@training_data_records);
+    fisher_yates_shuffle(\@test_data_records);
     if ($self->{_debug}) {
-        foreach my $record (@data_records) {
+        foreach my $record (@training_data_records) {
+            print "$record";
+        }
+        foreach my $record (@test_data_records) {
             print "$record";
         }
     }
-    open OUTPUT, ">$self->{_output_csv_file}";
-    my @feature_names = keys %{$self->{_features_with_value_range}};
-    my @quoted_feature_names = map {"\"$_\""} @feature_names;
-    my $first_row = '"",' . "\"class_name\"," . join ",", @quoted_feature_names;
-    print OUTPUT "$first_row\n";
-    my @sample_records = ();
-    foreach my $i (0..@data_records-1) {
+    open OUTPUT, ">$self->{_output_training_csv_file}";
+    my @feature_names_training = keys %{$self->{_features_with_value_range}};
+    my @quoted_feature_names_training = map {"\"$_\""} @feature_names_training;
+    my $first_row_training = '"",' . "\"class_name\"," . join ",", @quoted_feature_names_training;
+    print OUTPUT "$first_row_training\n";
+    foreach my $i (0..@training_data_records-1) {
         my $i1 = $i+1;
-        my $sample_record = "\"$i1\",$data_records[$i]";
+        my $sample_record = "\"$i1\",$training_data_records[$i]";
+        print OUTPUT "$sample_record";
+    }
+    close OUTPUT;
+    open OUTPUT, ">$self->{_output_test_csv_file}";
+    my @feature_names_testing = keys %{$self->{_features_with_value_range}};
+    my @quoted_feature_names_testing = map {"\"$_\""} @feature_names_testing;
+    my $first_row_testing = '"",' . "\"class_name\"," . join ",", @quoted_feature_names_testing;
+    print OUTPUT "$first_row_testing\n";
+    foreach my $i (0..@test_data_records-1) {
+        my $i1 = $i+1;
+        my $sample_record = "\"$i1\",$test_data_records[$i]";
         print OUTPUT "$sample_record";
     }
     close OUTPUT;
@@ -2647,11 +2689,11 @@ sub fisher_yates_shuffle {
 
 ##############################  Generate Your Own Symbolic Training Data  ################################
 
-##  See the sample script generate_training_data_symbolic.pl for how to use this
-##  class for generating symbolic training data.  The data is generated according to
-##  the specifications you place in a parameter file whose name you supply as one of
-##  constructor arguments.
-package TrainingDataGeneratorSymbolic;
+##  See the sample script generate_training_and_test_data_symbolic.pl for how to use
+##  this class for generating purely symbolic training and test data.  The data is
+##  generated according to the specifications you place in a parameter file whose
+##  name you supply as one of constructor arguments.
+package TrainingAndTestDataGeneratorSymbolic;
 
 use strict;                                                         
 use Carp;
@@ -2663,15 +2705,17 @@ sub new {
           "--- perhaps a misspelling\n" 
           if check_for_illegal_params4(@params) == 0;   
     bless {
-        _output_datafile                   =>   $args{'output_datafile'} 
-                                                          || croak("output_datafile required"),
+        _output_training_datafile          =>   $args{'output_training_datafile'} 
+                                                   || croak("name for output_training_datafile required"),
+        _output_test_datafile              =>   $args{'output_test_datafile'} 
+                                                   || croak("name for output_test_datafile required"),
         _parameter_file                    =>   $args{'parameter_file'}
-                                                          || croak("parameter_file required"),
-        _number_of_training_samples        =>   $args{'number_of_training_samples'} 
-                                                          || croak("number_of_training_samples required"),
-        _write_to_file                     =>   $args{'write_to_file'}, 
-        _debug1                            =>    $args{debug1} || 0,
-        _debug2                            =>    $args{debug2} || 0,
+                                                   || croak("parameter_file required"),
+        _number_of_samples_for_training    =>   $args{'number_of_samples_for_training'} 
+                                                   || croak("number_of_samples_for_training required"),
+        _number_of_samples_for_testing     =>   $args{'number_of_samples_for_testing'} 
+                                                   || croak("number_of_samples_for_testing required"),
+        _debug                             =>    $args{debug} || 0,
         _class_names                       =>    [],
         _class_priors                      =>    [],
         _features_and_values_hash          =>    {},
@@ -2682,12 +2726,12 @@ sub new {
 
 sub check_for_illegal_params4 {
     my @params = @_;
-    my @legal_params = qw / output_datafile
-                            write_to_file
-                            number_of_training_samples
+    my @legal_params = qw / output_training_datafile
+                            output_test_datafile
                             parameter_file
-                            debug1
-                            debug2
+                            number_of_samples_for_training
+                            number_of_samples_for_testing                                 
+                            debug
                           /;
     my $found_match_flag;
     foreach my $param (@params) {
@@ -2705,14 +2749,12 @@ sub check_for_illegal_params4 {
 
 sub read_parameter_file_symbolic {
     my $self = shift;
-    my $debug = $self->{_debug1};
-    my $debug2 = $self->{_debug2};
-    my $write_to_file = $self->{_write_to_file};
-    my $number_of_training_samples = $self->{_number_of_training_samples};
+    my $debug = $self->{_debug};
+    my $number_of_training_samples = $self->{_number_of_samples_for_training};
     my $input_parameter_file = $self->{_parameter_file};
     croak "Forgot to supply parameter file" if ! defined $input_parameter_file;
-    my $output_file = $self->{_output_datafile};
-    
+    my $output_file_training = $self->{_output_training_datafile};
+    my $output_file_testing = $self->{_output_test_datafile};
     my @all_params;
     my $param_string;
     open INPUT, $input_parameter_file
@@ -2787,14 +2829,15 @@ sub read_parameter_file_symbolic {
     }
 }
 
-sub gen_symbolic_training_data {
+sub gen_symbolic_training_and_test_data {
     my $self = shift;
     my @class_names = @{$self->{_class_names}};
     my @class_priors = @{$self->{_class_priors}};
     my %training_sample_records;
     my %features_and_values_hash = %{$self->{_features_and_values_hash}};
     my %bias_hash  = %{$self->{_bias_hash}};
-    my $how_many_training_samples = $self->{_number_of_training_samples};
+    my $how_many_training_samples = $self->{_number_of_samples_for_training};
+    my $how_many_test_samples = $self->{_number_of_samples_for_testing};
     my %class_priors_to_unit_interval_map;
     my $accumulated_interval = 0;
     foreach my $i (0..@class_names-1) {
@@ -2802,7 +2845,7 @@ sub gen_symbolic_training_data {
          = [$accumulated_interval, $accumulated_interval + $class_priors[$i]];
         $accumulated_interval += $class_priors[$i];
     }
-    if ($self->{_debug1}) {
+    if ($self->{_debug}) {
         print "Mapping of class priors to unit interval: \n";
         while ( my ($k, $v) = each %class_priors_to_unit_interval_map ) {
             print "$k =>  @$v\n";
@@ -2861,7 +2904,7 @@ sub gen_symbolic_training_data {
                     last;
                 }
             }
-            if ($self->{_debug2}) {
+            if ($self->{_debug}) {
                 print "mapping feature value priors for '$feature' " .
                                           "to unit interval: \n";
                 while ( my ($k, $v) = 
@@ -2874,23 +2917,16 @@ sub gen_symbolic_training_data {
         $ele_index++;
     }
     $self->{_training_sample_records} = \%training_sample_records;
-    if ($self->{_debug2}) {
+    if ($self->{_debug}) {
         print "\n\nPRINTING TRAINING RECORDS:\n\n";
         foreach my $kee (sort {sample_index($a) <=> sample_index($b)} 
                                          keys %training_sample_records) {
             print "$kee =>  @{$training_sample_records{$kee}}\n\n";
         }
     }
-}
-
-sub write_training_data_to_file {
-    my $self = shift;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my @class_names = @{$self->{_class_names}};
-    my $output_file = $self->{_output_datafile};
-    my %training_sample_records = %{$self->{_training_sample_records}};
-    print "\n\nDISPLAYING TRAINING RECORDS:\n\n" if $self->{_debug1};
-    open FILEHANDLE, ">$output_file";
+    my $output_training_file = $self->{_output_training_datafile};
+    print "\n\nDISPLAYING TRAINING RECORDS:\n\n" if $self->{_debug};
+    open FILEHANDLE, ">$output_training_file";
     print FILEHANDLE "Class names: @class_names\n\n"; 
     print FILEHANDLE "Feature names and their values:\n"; 
     my @features = keys %features_and_values_hash;
@@ -2907,11 +2943,11 @@ sub write_training_data_to_file {
     my $fmt = "$field_width  " x $num_of_columns;
     formline( $fmt, "sample", "class", @features );
     use English;
-    print $ACCUMULATOR, "\n" if $self->{_debug1};
+    print $ACCUMULATOR, "\n" if $self->{_debug};
     print FILEHANDLE "\n\n";
     print FILEHANDLE $ACCUMULATOR, "\n";
     $ACCUMULATOR = "";
-    print "=" x length($fmt) . "\n\n" if $self->{_debug1};
+    print "=" x length($fmt) . "\n\n" if $self->{_debug};
     print FILEHANDLE "=" x length($fmt) . "\n\n";
 
     foreach my $kee (sort {sample_index($a) <=> sample_index($b)} 
@@ -2930,214 +2966,21 @@ sub write_training_data_to_file {
             }
         }
         formline( $fmt, @args_for_formline );
-        print $ACCUMULATOR, "\n" if $self->{_debug1};
+        print $ACCUMULATOR, "\n" if $self->{_debug};
         print FILEHANDLE $ACCUMULATOR, "\n";
         $ACCUMULATOR = "";
     }
     close FILEHANDLE;
-}
-
-sub find_longest_feature_or_value {
-    my $self = shift;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my $max_length;
-    foreach my $feature (keys %features_and_values_hash) {
-        $max_length = length $feature if ! defined $max_length; 
-        $max_length = length( $feature ) if length($feature) > $max_length;
-        my @values = @{$features_and_values_hash{$feature}};
-        foreach my $value (@values) {
-            $max_length = length( $value ) if length($value) > $max_length;
-        }
-    }
-    return $max_length;
-}
-
-sub sample_index {
-    my $arg = shift;
-    $arg =~ /_(.+)$/;
-    return $1;
-}    
-
-#########################  Generate Your Own Test Data For Purely Symbolic Case  #########################
-
-##  This convenience class does basically the same thing as the
-##  TrainingDataGeneratorSymbolic except that it places the class labels for the
-##  sample records in a separate file.  Let's say you have already created a DT
-##  classifier and you would like to test its class discriminatory power.  You can
-##  use the classifier to calculate the class labels for the data records produced by
-##  the class shown here.  And then you can compare the calculated class labels with
-##  those placed originally by this class in a separate file.  See the script
-##  generate_test_data_symbolic.pl for how to use this class.
-
-package TestDataGeneratorSymbolic;
-
-use strict;                                                         
-use Carp;
-
-sub new {                                                           
-    my ($class, %args) = @_;
-    my @params = keys %args;
-    croak "\nYou have used a wrong name for a keyword argument " .
-          "--- perhaps a misspelling\n" 
-          if check_for_illegal_params5(@params) == 0;   
-    bless {
-        _output_test_datafile              =>   $args{'output_test_datafile'} 
-                                                          || croak("output_test_datafile required"),
-
-        _output_class_labels_file          =>   $args{'output_class_labels_file'} 
-                                                          || croak("output_class_labels_file required"),
-        _parameter_file                    =>   $args{'parameter_file'}
-                                                          || croak("parameter_file required"),
-        _number_of_test_samples            =>   $args{'number_of_test_samples'} 
-                                                          || croak("number_of_test_samples required"),
-        _write_to_file                     =>   $args{'write_to_file'}, 
-        _debug1                            =>    $args{debug1} || 0,
-        _debug2                            =>    $args{debug2} || 0,
-        _class_names                       =>    [],
-        _class_priors                      =>    [],
-        _features_and_values_hash          =>    {},
-        _bias_hash                         =>    {},
-        _test_sample_records               =>    {},
-    }, $class;
-}
-
-sub check_for_illegal_params5 {
-    my @params = @_;
-    my @legal_params = qw / output_test_datafile
-                            write_to_file
-                            number_of_test_samples
-                            output_class_labels_file
-                            parameter_file
-                            debug1
-                            debug2
-                          /;
-    my $found_match_flag;
-    foreach my $param (@params) {
-        foreach my $legal (@legal_params) {
-            $found_match_flag = 0;
-            if ($param eq $legal) {
-                $found_match_flag = 1;
-                last;
-            }
-        }
-        last if $found_match_flag == 0;
-    }
-    return $found_match_flag;
-}
-
-sub read_parameter_file_symbolic {
-    my $self = shift;
-    my $debug = $self->{_debug1};
-    my $debug2 = $self->{_debug2};
-    my $write_to_file = $self->{_write_to_file};
-    my $number_of_training_samples = $self->{_number_of_training_samples};
-    my $input_parameter_file = $self->{_parameter_file};
-    croak "Forgot to supply parameter file" if ! defined $input_parameter_file;
-    my $output_file = $self->{_output_datafile};
-    
-    my @all_params;
-    my $param_string;
-    open INPUT, $input_parameter_file
-                || "unable to open parameter file: $!";
-    @all_params = <INPUT>;
-    @all_params = grep { $_ !~ /^[ ]*#/ } @all_params;
-    chomp @all_params;
-    $param_string = join ' ', @all_params;
-    
-    my ($class_names, $class_priors, $rest_param) = 
-              $param_string =~ /^\s*class names:(.*?)\s*class priors:(.*?)(feature: .*)/;
-    my @class_names = grep {defined($_) && length($_) > 0} split /\s+/, $1;
-    push @{$self->{_class_names}}, @class_names;
-    my @class_priors =   grep {defined($_) && length($_) > 0} split /\s+/, $2;
-    push @{$self->{_class_priors}}, @class_priors;    
-    my ($feature_string, $bias_string) = $rest_param =~ /(feature:.*?) (bias:.*)/;
-    my %features_and_values_hash;
-    my @features = split /(feature[:])/, $feature_string;
-    @features = grep {defined($_) && length($_) > 0} @features;
-    foreach my $item (@features) {
-        next if $item =~ /feature/;
-        my @splits = split / /, $item;
-        @splits = grep {defined($_) && length($_) > 0} @splits;
-        foreach my $i (0..@splits-1) {
-            if ($i == 0) {
-                $features_and_values_hash{$splits[0]} = [];
-            } else {
-                next if $splits[$i] =~ /values/;
-                push @{$features_and_values_hash{$splits[0]}}, $splits[$i];
-            }
-        }
-    }
-    $self->{_features_and_values_hash} = \%features_and_values_hash;
-    my %bias_hash = %{$self->{_bias_hash}};
-    my @biases = split /(bias[:]\s*class[:])/, $bias_string;
-    @biases = grep {defined($_) && length($_) > 0} @biases;
-    foreach my $item (@biases) {
-        next if $item =~ /bias/;
-        my @splits = split /\s+/, $item;
-        @splits = grep {defined($_) && length($_) > 0} @splits;
-        my $feature_name;
-        foreach my $i (0..@splits-1) {
-            if ($i == 0) {
-                $bias_hash{$splits[0]} = {};
-            } elsif ($splits[$i] =~ /(^.+)[:]$/) {
-                $feature_name = $1;
-                $bias_hash{$splits[0]}->{$feature_name} = [];
-            } else {
-                next if !defined $feature_name;
-                push @{$bias_hash{$splits[0]}->{$feature_name}}, $splits[$i]
-                        if defined $feature_name;
-            }
-        }
-    }
-    $self->{_bias_hash} = \%bias_hash;
-    if ($debug) {
-        print "\n\nClass names: @class_names\n";
-        my $num_of_classes = @class_names;
-        print "Class priors: @class_priors\n";
-        print "Number of classes: $num_of_classes\n";
-        print "\nHere are the features and their possible values:\n";
-        while ( my ($k, $v) = each %features_and_values_hash ) {
-            print "$k ===>  @$v\n";
-        }
-        print "\nHere is the biasing for each class:\n";
-        while ( my ($k, $v) = each %bias_hash ) {
-            print "$k:\n";
-            while ( my ($k1, $v1) = each %$v ) {
-                print "       $k1 ===>  @$v1\n";
-            }
-        }
-    }
-}
-
-# Although the following method could be combined with the gen_training_data()
-# method, I have kept them separate to make it easier to generate test data whose
-# stats may not be identical to that of the training data:
-sub gen_test_data {
-    my $self = shift;
-    my @class_names = @{$self->{_class_names}};
-    my @class_priors = @{$self->{_class_priors}};
     my %test_sample_records;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my %bias_hash  = %{$self->{_bias_hash}};
-    my $how_many_test_samples = $self->{_number_of_test_samples};
-    my $file_for_class_labels = $self->{_output_class_labels_file};
-    open FILEHANDLE, ">$file_for_class_labels" 
-       or die "Unable to open file for writing class labels for test data: $!";
-    my %class_priors_to_unit_interval_map;
-    my $accumulated_interval = 0;
-    foreach my $i (0..@class_names-1) {
-        $class_priors_to_unit_interval_map{$class_names[$i]} 
-         = [$accumulated_interval, $accumulated_interval + $class_priors[$i]];
-        $accumulated_interval += $class_priors[$i];
-    }
-    if ($self->{_debug1}) {
+    if ($self->{_debug}) {
         print "Mapping of class priors to unit interval: \n";
         while ( my ($k, $v) = each %class_priors_to_unit_interval_map ) {
             print "$k =>  @$v\n";
         }
         print "\n\n";
     }
-    my $ele_index = 0;
+    $ele_index = 0;
+    my %sample_to_class_label_hash_test;
     while ($ele_index < $how_many_test_samples) {
         my $sample_name = "sample" . "_$ele_index";
         $test_sample_records{$sample_name} = [];
@@ -3147,7 +2990,7 @@ sub gen_test_data {
         foreach my $class_name (keys %class_priors_to_unit_interval_map ) {
             my $v = $class_priors_to_unit_interval_map{$class_name};
             if ( ($roll_the_dice >= $v->[0]) && ($roll_the_dice <= $v->[1]) ) {
-                print FILEHANDLE "$sample_name    $class_name\n";
+                $sample_to_class_label_hash_test{$sample_name} = $class_name;
                 $class_label = $class_name;
                 last;
             }
@@ -3188,7 +3031,7 @@ sub gen_test_data {
                     last;
                 }
             }
-            if ($self->{_debug2}) {
+            if ($self->{_debug}) {
                 print "mapping feature value priors for '$feature' " .
                                           "to unit interval: \n";
                 while ( my ($k, $v) = 
@@ -3201,42 +3044,36 @@ sub gen_test_data {
         $ele_index++;
     }
     $self->{_test_sample_records} = \%test_sample_records;
-    close FILEHANDLE;
-    if ($self->{_debug2}) {
+    if ($self->{_debug}) {
         print "\n\nPRINTING TEST RECORDS:\n\n";
         foreach my $kee (sort {sample_index($a) <=> sample_index($b)} 
                                          keys %test_sample_records) {
             print "$kee =>  @{$test_sample_records{$kee}}\n\n";
         }
     }
-}
-
-sub write_test_data_to_file {
-    my $self = shift;
-    my %features_and_values_hash = %{$self->{_features_and_values_hash}};
-    my @class_names = @{$self->{_class_names}};
     my $output_file = $self->{_output_test_datafile};
-    my %test_sample_records = %{$self->{_test_sample_records}};
-    print "\n\nDISPLAYING TEST RECORDS:\n\n" if $self->{_debug1};
+    %test_sample_records = %{$self->{_test_sample_records}};
+    print "\n\nDISPLAYING TEST RECORDS:\n\n" if $self->{_debug};
     open FILEHANDLE, ">$output_file";
-    my @features = keys %features_and_values_hash;
+    print FILEHANDLE "\#\#  Note that the entry in the second column is the class label for the\n";
+    print FILEHANDLE "\#\#  sample named in the first column\n\n\n";
     die "You probably forgot to read the parameter file before calling " .
                  "write_test_data_to_file()"   if @features == 0;
-    print "Feature Order For Data:   @features\n\n\n" if $self->{_debug1};
+    print "Feature Order For Data:   @features\n\n\n" if $self->{_debug};
     print FILEHANDLE "Feature Order For Data:   @features\n\n\n";
-    my %feature_name_indices;
     foreach my $i (0..@features-1) {
-        $feature_name_indices{$features[$i]} = $i + 1;
+        $feature_name_indices{$features[$i]} = $i + 2;
     }
-    my $num_of_columns = @features + 1;
-    my $field_width = '@' . "<" x $self->find_longest_feature_or_value();
+    $num_of_columns = @features + 2;
+    $field_width = '@' . "<" x $self->find_longest_feature_or_value();
     use English;
-    my $fmt = "$field_width  " x $num_of_columns;
+    $fmt = "$field_width  " x $num_of_columns;
     foreach my $kee (sort {sample_index($a) <=> sample_index($b)} 
                                      keys %test_sample_records) {
         my @record = @{$test_sample_records{$kee}};
         my @args_for_formline;
         $args_for_formline[0] = $kee;
+        $args_for_formline[1] = $sample_to_class_label_hash_test{$kee};
         foreach my $item (@record) {
             $item =~ /(.+)=(.+)/;
             my ($item_name, $item_value) = ($1, $2);
@@ -3244,12 +3081,13 @@ sub write_test_data_to_file {
                                                  = $item_value;
         }
         formline( $fmt, @args_for_formline );
-        print $ACCUMULATOR, "\n" if $self->{_debug1};
+        print $ACCUMULATOR, "\n" if $self->{_debug};
         print FILEHANDLE $ACCUMULATOR, "\n";
         $ACCUMULATOR = "";
     }
     close FILEHANDLE;
 }
+
 
 sub find_longest_feature_or_value {
     my $self = shift;
@@ -3275,6 +3113,7 @@ sub sample_index {
 1;
 
 =pod
+
 =head1 NAME
 
 Algorithm::DecisionTree - A Perl module for constructing a decision tree from
@@ -3360,6 +3199,14 @@ classifying new data.
 
 =head1 CHANGES
 
+Version 2.2 makes it easier to write code for classifying in one go all of your test
+data samples in a CSV file.  The bulk classifications obtained can be written out to
+either a CSV file or to a regular text file.  See the script
+C<classify_test_data_in_a_file_numeric.pl> in the C<examples> directory for how to
+classify all of your test data records in a CSV file.  This version also includes
+improved code for generating synthetic numeric/symbolic training and test data
+records for experimenting with the decision tree classifier.
+
 Version 2.1 allows you to test the quality of your training data by running a 10-fold
 cross-validation test on the data.  This test divides all of the training data into
 ten parts, with nine parts used for training a decision tree and one part used for
@@ -3369,7 +3216,7 @@ possible.  This testing functionality in Version 2.1 can also be used to find th
 best values to use for the constructor parameters C<entropy_threshold>,
 C<max_depth_desired>, and C<symbolic_to_numeric_cardinality_threshold>.
 
-Version 2.0 is a major rewrite of this module.  Now you can use both numeric and
+B<Version 2.0 is a major rewrite of this module.> Now you can use both numeric and
 symbolic features for constructing a decision tree. A feature is numeric if it can
 take any floating-point value over an interval.
 
@@ -3438,14 +3285,15 @@ features.
 
 =head1 SPECIAL USAGE NOTE
 
-For those transitioning from the older versions of this module, if your training data
-consists of numeric features, or has a combination of numeric and symbolic features,
-you MUST use a CSV file to supply your data to the module.  Additionally, this CSV
-file must satisfy certain formatting constraints.  See C<README_for_CSV_files> in the
-C<examples> directory for what these formatting restrictions are.  And, even if your
-training data is purely symbolic, your old-style `C<.dat>' training files will not
-work with the new module.  See C<README_for_dat_files> in the C<examples> directory
-for the formatting related to the new `C<.dat>' files.
+For those transitioning from versions older than 2.0 of this module, if your training
+data consists of numeric features, or has a combination of numeric and symbolic
+features, you MUST use a CSV file to supply your data to the module.  Additionally,
+this CSV file must satisfy certain formatting constraints.  See
+C<README_for_CSV_files> in the C<examples> directory for what these formatting
+restrictions are.  And, even if your training data is purely symbolic, your old-style
+`C<.dat>' training files will not work with the new module.  See
+C<README_for_dat_files> in the C<examples> directory for the formatting related to
+the new `C<.dat>' files.
 
 =head1 DESCRIPTION
 
@@ -3454,10 +3302,9 @@ a training datafile containing multidimensional data.  In one form or another,
 decision trees have been around for about fifty years.  From a statistical
 perspective, they are closely related to classification and regression by recursive
 partitioning of multidimensional data.  Early work that demonstrated the usefulness
-of recursive partitioning of data for the purposes of classification and regression
-can be traced, in the statistics community, to the contributions by Terry Therneau in
-the early 1980's and, in the machine learning community, to the work of Ross Quinlan
-in the mid 1990's.
+of recursive partitioning of data can be traced, in the statistics community, to the
+contributions by Terry Therneau in the early 1980's and, in the machine learning
+community, to the work of Ross Quinlan in the mid 1990's.
 
 For those not familiar with decision tree ideas, the traditional way to classify
 multidimensional data is to start with a feature space whose dimensionality is the
@@ -3488,7 +3335,7 @@ associated with the training data corresponding to that child node?
 As the reader would expect, the two key steps in any approach to decision-tree based
 classification are the construction of the decision tree itself from a file
 containing the training data, and then using the decision tree thus obtained for
-classifying the data.
+classifying new data.
 
 What is cool about decision tree classification is that it gives you soft
 classification, meaning it may associate more than one class label with a given data
@@ -3498,10 +3345,10 @@ sufficient training data to the decision tree classifier.  For a tutorial
 introduction to how a decision tree is constructed and used, visit
 L<https://engineering.purdue.edu/kak/Tutorials/DecisionTreeClassifiers.pdf>
 
-This module also allows you to generate your own synthetic training data. Generating
-your own training data, using it for constructing a decision-tree classifier and
-subsequently testing the classifier on a test set of data is a good way to develop
-greater proficiency with decision trees.
+This module also allows you to generate your own synthetic training and test
+data. Generating your own training data, using it for constructing a decision-tree
+classifier, and subsequently testing the classifier on a synthetically generated
+test set of data is a good way to develop greater proficiency with decision trees.
 
 
 =head1 WHAT PRACTICAL PROBLEM IS SOLVED BY THIS MODULE
@@ -3596,14 +3443,16 @@ comparison operators.  Having said that, features that take only a small number 
 numeric values in the training data can be treated symbolically provided you are
 careful about handling their values in the test data.  At the least, you have to set
 the test data value for such a feature to its closest value in the training data.
+The module does that automatically for you for those numeric features for which the
+number different numeric values is less than a user-specified threshold.
 
 The constructor parameter C<symbolic_to_numeric_cardinality_threshold> let's you tell
 the module when to consider an otherwise numeric feature symbolically. Suppose you
 set this parameter to 10, that means that all numeric looking features that take 10
 or fewer different values in the training datafile will be considered to be symbolic
-features.  See the tutorial at
-L<https://engineering.purdue.edu/kak/Tutorials/DecisionTreeClassifiers.pdf> for further
-information on the implementation issues related to the symbolic and numeric
+features by the module.  See the tutorial at
+L<https://engineering.purdue.edu/kak/Tutorials/DecisionTreeClassifiers.pdf> for
+further information on the implementation issues related to the symbolic and numeric
 features.
 
 =head1 TESTING THE QUALITY OF YOUR TRAINING DATA
@@ -3655,7 +3504,7 @@ The module provides the following methods for constructing a decision tree from
 training data in a disk file and for classifying new data records with the decision
 tree thus constructed:
 
-=over
+=over 4
 
 =item B<new():>
 
@@ -3676,11 +3525,14 @@ numeric features, you must use a CSV file for supplying the data to the module.>
 previous versions of this module used `C<.dat>' files for the training data.  You can
 still use your old `C<.dat>' files provided you modify them a little bit.  See
 C<README_for_dat_files> in the C<examples> directory for how to modify your old
-C<.dat> files.
+C<.dat> files.  B<Note that column indexing is zero-based.> With the index set to 2
+as shown above, the class labels are in the third column for the above case.
 
-=over
+=back
 
 =head2 Constructor Parameters:
+
+=over 8
 
 =item C<training_datafile>:
 
@@ -3724,6 +3576,8 @@ You can choose the best values to use for the last three constructor parameters 
 running a 10-fold cross-validation test on your training data through the class
 C<EvalTrainingData> that comes with Version 2.1 of this module.  See the section
 "TESTING THE QUALITY OF YOUR TRAINING DATA" of this document page.
+
+=over
 
 =item B<get_training_data():>
 
@@ -3820,24 +3674,22 @@ call to C<construct_decision_tree_classifier()>.
 =head1 GENERATING SYNTHETIC TRAINING AND TEST DATA
 
 The module file contains the following additional classes: (1)
-C<TrainingDataGeneratorNumeric>, (2) C<TrainingDataGeneratorSymbolic>, and (3)
-C<TestDataGeneratorSymbolic> for generating synthetic training and test data.  
+C<TrainingAndTestDataGeneratorNumeric>, and (2)
+C<TrainingAndTestDataGeneratorSymbolic> for generating synthetic training and test
+data.
 
-The class C<TrainingDataGeneratorNumeric> outputs a CSV training data file for
-experimenting with numeric features.  The numeric values are generated using a
-multivariate Gaussian distribution whose mean and covariance are specified in a
-parameter file. See the file C<param_numeric.txt> in the C<examples> directory for an
-example of such a parameter file.  Note that the dimensionality of the data is
-inferred from the information you place in the parameter file.
+The class C<TrainingAndTestDataGeneratorNumeric> outputs one CSV file for the
+training data and another one for the test data for experimenting with numeric
+features.  The numeric values are generated using a multivariate Gaussian
+distribution whose mean and covariance are specified in a parameter file. See the
+file C<param_numeric.txt> in the C<examples> directory for an example of such a
+parameter file.  Note that the dimensionality of the data is inferred from the
+information you place in the parameter file.
 
-The class C<TrainingDataGeneratorSymbolic> generates synthetic training data for the
-purely symbolic case.  The relative frequencies of the different possible values for
-the features is controlled by the biasing information you place in a parameter file.
-See C<param_symbolic.txt> for an example of such a file.  The class
-C<TestDataGeneratorSymbolic> is just a convenience class for creating test data ---
-that is, data records without class labels.  The labels are placed in a separate
-file.
-
+The class C<TrainingAndTestDataGeneratorSymbolic> generates synthetic training and
+test data for the purely symbolic case.  The relative frequencies of the different
+possible values for the features is controlled by the biasing information you place
+in a parameter file.  See C<param_symbolic.txt> for an example of such a file.
 
 =head1 HOW THE CLASSIFICATION RESULTS ARE DISPLAYED
 
@@ -3851,16 +3703,34 @@ data vector. Run the examples scripts in the Examples directory to see how the o
 of classification can be displayed.
 
 For large test datasets, you would obviously want to process an entire file of test
-data at a time.  For the case of purely symbolic data, the best way to do this is to
-follow my script
+data samples in one go.  As to how you can do that, see the following two scripts in
+the C<examples> directory:
 
-        classify_test_data_in_a_file.pl
+    classify_test_data_in_a_file_numeric.pl
+    classify_test_data_in_a_file_symbolic.pl
 
-in the C<examples> directory.  This script requires three command-line arguments, the
-first argument names the training datafile, the second the test datafile, and the
-third in which the classification results will be deposited.  The test datafile must
-mention the order in which the features values are presented.  For an example, see
-the file C<testdata.dat> in the C<examples> directory.
+the first for the case of numeric/symbolic data placed in a CSV file and the second
+case of purely symbolic data placed in a `.dat' file.  These script requires three
+command-line arguments, the first argument names the training datafile, the second
+the test datafile, and the third in which the classification results will be
+deposited.  The test data files for both the numeric/symbolic and the purely symbolic
+cases must look like the training data files.  B<If the test data files do not
+mention the class labels --- as will be the case for real-world test data --- you
+must still have a column for the class labels with the entries set to the empty
+string C<"">.> The test datafile for the purely symbolic case must mention the order
+in which the features values are presented.  For an example, see the file
+C<testdata.dat> in the C<examples> directory.
+
+A special feature of the script C<classify_test_data_in_a_file_numeric.pl> is that
+its last command-line argument (meaning the 3rd argument) can be either a C<.csv>
+filename or a C<.txt> filename.  As you'd expect, the output classifications are
+displayed in a CSV format for the former case.  For the latter case, the results are
+shown with white-space separation between the different class names and their
+probabilities.  Additionally, for the latter case, you can the tell the script either
+to show you only the most probable class for each data sample or all the classes.
+You control this choice by setting the variable C<$show_hard_classifications> in the
+script. When this variable is set, you'll only be shown the most probable class for
+each sample when the output is to a C<.txt> file.
 
 With regard to the soft classifications returned by this classifier, if the
 probability distributions for the different classes overlap in the underlying feature
@@ -3881,28 +3751,51 @@ See the C<examples> directory in the distribution for how to construct a decisio
 tree, and how to then classify new data using the decision tree.  To become more
 familiar with the module, run the scripts
 
-        construct_dt_and_classify_one_sample_case1.pl
-        construct_dt_and_classify_one_sample_case2.pl
-        construct_dt_and_classify_one_sample_case3.pl
-        construct_dt_and_classify_one_sample_case4.pl
+    construct_dt_and_classify_one_sample_case1.pl
+    construct_dt_and_classify_one_sample_case2.pl
+    construct_dt_and_classify_one_sample_case3.pl
+    construct_dt_and_classify_one_sample_case4.pl
 
 The first script is for the purely symbolic case, the second for the case that
 involves both numeric and symbolic features, the third for the case of purely numeric
 features, and the last for the case when the training data is synthetically generated
 by the script C<generate_training_data_numeric.pl>.
 
-Next run the following script as it is
+Next run the following scripts just as you find them:
 
-       classify_test_data_in_a_file.pl   training.dat   testdata.dat   out.txt
+    classify_test_data_in_a_file_numeric.pl   training4.csv   test4.csv   out4.csv
 
-This call will first construct a decision tree using the training data in the file
-C<training.dat>.  It will then calculate the class label for each data record in the
-file C<testdata.dat>.  The estimated class labels will be written out to the file
-C<out.txt>.
+    classify_test_data_in_a_file_symbolic.pl   training4.dat   test4.dat   out4.dat
+
+and examine the contents of the output files C<out4.csv> and C<out4.dat>.  Each of
+above two scripts first constructs a decision tree using the training data in the
+training file supplied by the first command-line argument.  The script then
+calculates the class label for each data record in the test data file supplied
+through the second command-line argument.  The estimated class labels are written out
+to the output file named by the third argument.
+
+In general, for the two calls shown above, the test data files should look identical
+to the training data files. Of course, for real-world test data, you will not have
+the class labels for the test samples.  For real-world test data, you are still
+required to reserve a column for the class label, which now must be just the empty
+string C<""> for each data record.  For example, the test data records supplied in
+the following two calls through the files C<test4_no_class_labels.csv> and
+C<test4_no_class_labels.dat> do not mention class labels:
+
+    classify_test_data_in_a_file_numeric.pl   training4.csv   test4_no_class_labels.csv   out4.csv
+
+    classify_test_data_in_a_file_symbolic.pl   training4.dat   test4_no_class_labels.dat   out4.dat 
+
+For bulk classification, the output file can also be a C<.txt> file.  In that case,
+you will see white-space separate results in the output file.  When you mention a
+C<.txt> file for the output, you can control the extent of information placed in the
+output file by setting the variable C<$show_hard_classifications> in the scripts.  If
+this variable is set, the output will show only the most probable class for each test
+data record.
 
 The following script in the C<examples> directory
 
-        classify_by_asking_questions.pl
+    classify_by_asking_questions.pl
 
 shows how you can use a decision-tree classifier interactively.  In this mode, you
 first construct the decision tree from the training data and then the user is
@@ -3910,9 +3803,8 @@ prompted for answers to the feature tests at the nodes of the tree.
 
 The C<examples> directory also contains the following scripts:
 
-        generate_training_data_numeric.pl
-        generate_training_data_symbolic.pl
-        generate_test_data_symbolic.pl
+    generate_training_and_test_data_numeric.pl
+    generate_training_and_test_data_symbolic.pl
 
 that show how you can use the module to generate synthetic training and test data.
 Synthetic training and test data are generated according to the specifications laid
@@ -3920,11 +3812,11 @@ out in a parameter file.  There are constraints on how the information is laid o
 a parameter file.  See the files C<param_numeric.txt> and C<param_symbolic.txt> in
 the C<examples> directory for how to structure these files.
 
-The C<examples> directory of Version 2.1 of the C<DecisionTree> module also contains
-the following two scripts:
+The C<examples> directory of Version 2.1 and above of the C<DecisionTree> module also
+contains the following two scripts:
 
-       evaluate_training_data1.pl
-       evaluate_training_data2.pl
+    evaluate_training_data1.pl
+    evaluate_training_data2.pl
 
 that illustrate how the Perl class C<EvalTrainingData> can be used to evaluate the
 quality of your training data (as long as it resides in a `C<.csv>' file.)  This new
@@ -3974,7 +3866,7 @@ past my spam filter.
 This library is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.
 
- Copyright 2013 Avinash Kak
+ Copyright 2014 Avinash Kak
 
 =cut
 

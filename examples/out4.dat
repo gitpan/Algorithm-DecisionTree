@@ -1,0 +1,23 @@
+
+The classification results for each sample are shown in decreasing order of class probabilities:
+
+sample_0:  malignant: 0.750    benign: 0.250    
+sample_1:  malignant: 0.662    benign: 0.338    
+sample_2:  benign: 0.955    malignant: 0.045    
+sample_3:  malignant: 0.912    benign: 0.088    
+sample_4:  benign: 0.970    malignant: 0.030    
+sample_5:  malignant: 0.750    benign: 0.250    
+sample_6:  malignant: 0.912    benign: 0.088    
+sample_7:  malignant: 0.662    benign: 0.338    
+sample_8:  benign: 0.989    malignant: 0.011    
+sample_9:  malignant: 0.662    benign: 0.338    
+sample_10:  malignant: 0.979    benign: 0.021    
+sample_11:  benign: 0.989    malignant: 0.011    
+sample_12:  malignant: 0.750    benign: 0.250    
+sample_13:  benign: 0.920    malignant: 0.080    
+sample_14:  malignant: 0.750    benign: 0.250    
+sample_15:  benign: 0.905    malignant: 0.095    
+sample_16:  benign: 0.920    malignant: 0.080    
+sample_17:  benign: 0.984    malignant: 0.016    
+sample_18:  malignant: 0.750    benign: 0.250    
+sample_19:  benign: 0.989    malignant: 0.011    

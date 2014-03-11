@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               Algorithm-DecisionTree
-version:            2.1
+version:            2.2
 abstract:           A Perl module for decision-tree based classification of multidimensional data
 author:
     - Avinash Kak (kak@purdue.edu)
@@ -10,7 +10,8 @@ configure_requires:
     ExtUtils::MakeMaker:  0
 build_requires:
     ExtUtils::MakeMaker:  0
-requires:  {}
+requires:
+    Math::Random:  0.71
 no_index:
     directory:
         - t

@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 
-## classify_test_data_in_a_file.pl
+## classify_test_data_in_a_file_symbolic.pl
 
 #use lib '../blib/lib', '../blib/arch';
 
@@ -40,6 +40,7 @@ open TESTFILEHANDLE, $test_datafile
     or die "Unable to open the test datafile $test_datafile: $!";
 open OUTPUTHANDLE, ">$outputfile"
     or die "Unable to open the test datafile $outputfile: $!";
+print OUTPUTHANDLE "\nThe classification results for each sample are shown in decreasing order of class probabilities:\n\n";
 
 my @features;
 while (<TESTFILEHANDLE>) {
@@ -53,6 +54,7 @@ while (<TESTFILEHANDLE>) {
     }
     my @test_sample_entries = split /\s+/;
     my $sample_name = shift @test_sample_entries;
+    my $class_label = shift @test_sample_entries;
     die "the number of features listed in the header does not match " . 
         "the number of values in the test data for sample $sample_name" 
                   unless @features == @test_sample_entries;
@@ -61,13 +63,15 @@ while (<TESTFILEHANDLE>) {
         push @test_sample, "$features[$i]=$test_sample_entries[$i]";
     }
     my %classification = %{$dt->classify($root_node, \@test_sample)};
+    my @solution_path = @{$classification{'solution_path'}};
+    delete $classification{'solution_path'};
+    my @which_classes = keys %classification;
+    @which_classes = sort {$classification{$b} <=> $classification{$a}} @which_classes;
     my $result = "$sample_name:  ";
-    foreach my $class ($dt->get_class_names()) {
-        $result .= sprintf( "$class probability: %.3f    ", 
-                            $classification{$class});    
+    foreach my $class (@which_classes) {
+        $result .= sprintf( "$class: %.3f    ", $classification{$class});    
     }
-#    print "$result\n" if $debug == 1;
-    print "$result\n";
+    print "$result\n" if $debug == 1;
     print OUTPUTHANDLE "$result\n";
 }
 close TESTFILEHANDLE;

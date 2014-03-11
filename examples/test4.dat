@@ -1,0 +1,27 @@
+##  Note that the entry in the second column is the class label for the
+##  sample named in the first column
+
+
+Feature Order For Data:   videoAddiction exercising smoking fatIntake
+
+
+sample_0         benign           medium           occasionally     medium           medium
+sample_1         malignant        medium           never            heavy            low
+sample_2         benign           none             regularly        medium           heavy
+sample_3         malignant        none             never            medium           heavy
+sample_4         benign           low              regularly        never            heavy
+sample_5         malignant        none             occasionally     heavy            medium
+sample_6         malignant        low              never            heavy            heavy
+sample_7         malignant        heavy            never            heavy            medium
+sample_8         benign           none             regularly        never            medium
+sample_9         malignant        none             never            medium           medium
+sample_10        malignant        heavy            never            heavy            heavy
+sample_11        benign           none             regularly        never            low
+sample_12        benign           low              occasionally     medium           low
+sample_13        benign           low              regularly        heavy            low
+sample_14        benign           heavy            occasionally     never            low
+sample_15        benign           heavy            regularly        never            medium
+sample_16        benign           low              regularly        heavy            low
+sample_17        benign           medium           regularly        medium           medium
+sample_18        benign           medium           occasionally     never            low
+sample_19        benign           none             regularly        light            medium

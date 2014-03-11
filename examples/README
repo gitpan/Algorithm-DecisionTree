@@ -1,5 +1,6 @@
-        IN ORDER TO BECOME FAMILIAR WITH THE DecisionTree MODULE
-
+   
+          IN ORDER TO BECOME FAMILIAR WITH THE DecisionTree MODULE
+          ========================================================
 
 
 (1) First run the scripts
@@ -29,7 +30,12 @@
     data file `training.csv'.  These training files serve as examples for:
 
        stage3cancer.csv:   Example of a CSV training data file with both 
-                           symbolic and numeric features
+                           symbolic and numeric features.  The class label
+                           in this case corresponds to the label `pgstat' in
+                           the first record at the top.  This implies that
+                           the class label in the column whose column-index
+                           is 2. (Note that column indexing is zero based. 
+                           That is, the index of the first column is 0.)
 
        training.csv    :   Example of a CSV training data file for the
                            purely numeric case.  Contains two classes, each
@@ -70,48 +76,62 @@
 
 (3) So far we have talked about classifying one test data record at a time.
     You can place multiple test data records in a disk file and classify
-    them all in one go.  To see how that can be done for the purely
-    symbolic case, execute the command line in the `examples' directory:
+    them all in one go.  To see how that can be done, execute the following
+    two command lines in the `examples' directory:
 
-      classify_test_data_in_a_file.pl  training.dat  testdata.dat  out.txt
 
-    The script classify_test_data_in_a_file.pl constructs the decision tree
-    from the data in the first argument file and then uses it to classify
-    the data in the second argument file.  The computed class labels are
-    deposited in the third argument file.  Note that the only difference
-    between the file `training.dat' and `testdata.dat' is that the latter
-    does not mention the class labels for the data records.
+      classify_test_data_in_a_file_numeric.pl   training4.csv   test4.csv   out4.csv
 
-    You can create a similar script for classifying an arbitrary number of
-    NUMERICAL data records placed in a file.  When your data includes
-    numerical fields, your training data file must be a CSV file.  However,
-    your test data file can still be a regular txt file.
+      classify_test_data_in_a_file_symbolic.pl   training4.dat   test4.dat   out4.dat
 
+    Each of these two scripts constructs the decision tree from the data in
+    the first argument file and then uses it to classify the data in the
+    second argument file.  The computed class labels are deposited in the
+    third argument file.  
+
+    In general, the test data files should look identical to the training
+    data files.  Of course, for real-world test data, you will not have the
+    class labels for the test samples.  You are still required to reserve a
+    column for the class label, which now must be just the empty string ""
+    for each data record.  For example, the test data supplied in the
+    following two calls through the files test4_no_class_labels.csv and
+    test4_no_class_labels.dat does not mention class labels:
+
+      classify_test_data_in_a_file_numeric.pl   training4.csv   test4_no_class_labels.csv   out4.csv
+
+      classify_test_data_in_a_file_symbolic.pl   training4.dat   test4_no_class_labels.dat   out4.dat
+
+    For bulk classification, the output file can also be a `.txt' file.  In
+    that case, you will see white-space separate results in the output
+    file.  When you mention a `.txt' file for the output, you can control
+    the extent of information placed in the output file by setting the
+    variable $show_hard_classifications in the script.  If this variable is
+    set, the output will show only the most probable class for each test
+    data record.
 
 >   TO REMIND THE READER AGAIN, IF YOUR TRAINING DATA USES JUST NUMERIC
->   FEATURES OR A MIXTURE OF NUMERIC AND SYMBOLIC FEATURES, YOU MUST USE A
->   CSV FILE FOR THE TRAINING DATA.
-
+>   FEATURES OR A MIXTURE OF NUMERIC AND SYMBOLIC FEATURES, YOU MUST USE
+>   CSV FILES FOR TRAINING AND TEST DATA.
 
 
 ===========================================================================
 
 
-             FOR USING A DECISION TREE CLASSIFIER INTERACTIVELY
+          FOR USING A DECISION TREE CLASSIFIER INTERACTIVELY
 
 
-    Starting with Version 1.6 of the module, you can use the DecisionTree
-    classifier in an interactive mode.  In this mode, after you have
-    constructed the decision tree, the user is prompted for answers to the
-    questions regarding the feature tests at the nodes of the tree.
-    Depending on the answer supplied by the user at a node, the classifier
-    takes a path corresponding to the answer to descend down the tree to
-    the next node, and so on.  To get a feel for using a decision tree in
-    this mode, examine the script
+Starting with Version 1.6 of the module, you can use the DecisionTree
+classifier in an interactive mode.  In this mode, after you have
+constructed the decision tree, the user is prompted for answers to the
+questions regarding the feature tests at the nodes of the tree.  Depending
+on the answer supplied by the user at a node, the classifier takes a path
+corresponding to the answer to descend down the tree to the next node, and
+so on.  To get a feel for using a decision tree in this mode, examine the
+script
 
         classify_by_asking_questions.pl
 
-    Execute the script as it is and see what happens.
+Execute the script as it is and see what happens.
 
 
 ===========================================================================
@@ -160,37 +180,23 @@ and finally the training file `training3.csv'.
               GENERATING SYNTHETIC TRAINING AND TEST DATA
 
 
-    Starting with Version 1.6, you can use the module itself to generate
-    synthetic training and test data.  See the script
+Starting with Version 1.6, you can use the module itself to generate
+synthetic training and test data.  See the script
 
         generate_training_data_numeric.pl
 
         generate_training_data_symbolic.pl
 
-    for how to generate training data for the decision-tree classifier for
-    the purely numeric case and for the purely symbolic case.  The data is
-    generated according to the information placed in a parameter file in
-    each case.  These files must follow certain rules regarding the
-    declaration of the classes, the features, the possible values for the
-    features, etc.  An example of such a parameter file for the numeric
-    case is:
+for how to generate training data for the decision-tree classifier for the
+purely numeric case and for the purely symbolic case.  The data is
+generated according to the information placed in a parameter file in each
+case.  These files must follow certain rules regarding the declaration of
+the classes, the features, the possible values for the features, etc.  An
+example of such a parameter file for the numeric case is:
 
         param_numeric.txt
 
-    and for the symbolic case:
+and for the symbolic case:
 
         param_symbolic.txt
-
-    A test-data file looks very much like a training data file, except that
-    the former does not contain the class labels for the different data
-    records.  See the script
-
-        generate_test_data_symbolic.pl
-
-    for an example of how you can generate test data for the purely
-    symbolic case.  Note that the class labels for the test data are placed
-    in a separate file whose name is supplied in the script named above.
-    By comparing the classification labels obtained for each of the data
-    records with their true labels you can assess the accuracy of the
-    decision-tree classifier.
 
