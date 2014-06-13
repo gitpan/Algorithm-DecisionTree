@@ -12,12 +12,12 @@ package Algorithm::DecisionTree;
 # new data.
 #---------- ---------------------------------------------------------------------------
 
-use 5.14.0;
+use 5.18.0;
 use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '2.2';
+our $VERSION = '2.21';
 
 ############################################   Constructor  ##############################################
 
@@ -612,19 +612,19 @@ sub best_feature_calculator {
             print "\nBFC4 values for $feature_name are @values\n" if $self->{_debug3};      
             my @newvalues = ();
             if (contained_in($feature_name, @true_numeric_types_feature_names)) {
-                if ($upperbound{$feature_name} && $lowerbound{$feature_name} &&
+                if (defined($upperbound{$feature_name}) && defined($lowerbound{$feature_name}) &&
                               $lowerbound{$feature_name} >= $upperbound{$feature_name}) {
                     next;
-                } elsif ($upperbound{$feature_name} && $lowerbound{$feature_name} &&
+                } elsif (defined($upperbound{$feature_name}) && defined($lowerbound{$feature_name}) &&
                                     $lowerbound{$feature_name} < $upperbound{$feature_name}) {
                     foreach my $x (@values) {
                         push @newvalues, $x if $x > $lowerbound{$feature_name} && $x <= $upperbound{$feature_name};
                     }
-                } elsif ($upperbound{$feature_name}) {
+                } elsif (defined($upperbound{$feature_name})) {
                     foreach my $x (@values) {
                         push @newvalues, $x if $x <= $upperbound{$feature_name};
                     }
-                } elsif ($lowerbound{$feature_name}) {
+                } elsif (defined($lowerbound{$feature_name})) {
                     foreach my $x (@values) {
                         push @newvalues, $x if $x > $lowerbound{$feature_name};
                     }
@@ -1328,10 +1328,10 @@ sub probability_of_a_sequence_of_features_and_values_or_thresholds {
         }
     }
     foreach my $feature_name (@true_numeric_types_feature_names) {
-        if ($lowerbound{$feature_name} && $upperbound{$feature_name} && 
+        if (defined($lowerbound{$feature_name}) && defined($upperbound{$feature_name}) && 
                           $upperbound{$feature_name} <= $lowerbound{$feature_name}) { 
             return 0;
-        } elsif ($lowerbound{$feature_name} && $upperbound{$feature_name}) {
+        } elsif (defined($lowerbound{$feature_name}) && defined($upperbound{$feature_name})) {
             if (! $probability) {
                 $probability = $self->probability_of_feature_less_than_threshold($feature_name, 
                                                                                  $upperbound{$feature_name}) -
@@ -1341,7 +1341,7 @@ sub probability_of_a_sequence_of_features_and_values_or_thresholds {
                                                                                    $upperbound{$feature_name}) -
                  $self->probability_of_feature_less_than_threshold($feature_name, $lowerbound{$feature_name}))
             }
-        } elsif ($upperbound{$feature_name} && ! $lowerbound{$feature_name}) {
+        } elsif (defined($upperbound{$feature_name}) && ! defined($lowerbound{$feature_name})) {
             if (! $probability) {
                 $probability = $self->probability_of_feature_less_than_threshold($feature_name,
                                                                                  $upperbound{$feature_name});
@@ -1349,7 +1349,7 @@ sub probability_of_a_sequence_of_features_and_values_or_thresholds {
                 $probability *= $self->probability_of_feature_less_than_threshold($feature_name, 
                                                                                   $upperbound{$feature_name});
             }
-        } elsif ($lowerbound{$feature_name} && ! $upperbound{$feature_name}) {
+        } elsif (defined($lowerbound{$feature_name}) && ! defined($upperbound{$feature_name})) {
             if (! $probability) {
                 $probability = 1.0 - $self->probability_of_feature_less_than_threshold($feature_name,
                                                                                  $lowerbound{$feature_name});
@@ -1439,7 +1439,7 @@ sub probability_of_a_sequence_of_features_and_values_or_thresholds_given_class {
         if ($lowerbound{$feature_name} && $upperbound{$feature_name} && 
                           $upperbound{$feature_name} <= $lowerbound{$feature_name}) { 
             return 0;
-        } elsif ($lowerbound{$feature_name} && $upperbound{$feature_name}) {
+        } elsif (defined($lowerbound{$feature_name}) && defined($upperbound{$feature_name})) {
             if (! $probability) {
 
                 $probability =   $self->probability_of_feature_less_than_threshold_given_class($feature_name, 
@@ -1452,7 +1452,7 @@ sub probability_of_a_sequence_of_features_and_values_or_thresholds_given_class {
                                  $self->probability_of_feature_less_than_threshold_given_class($feature_name, 
                                                                $lowerbound{$feature_name}, $class_name))
             }
-        } elsif ($upperbound{$feature_name} && ! $lowerbound{$feature_name}) {
+        } elsif (defined($upperbound{$feature_name}) && ! defined($lowerbound{$feature_name})) {
             if (! $probability) {
                 $probability =   $self->probability_of_feature_less_than_threshold_given_class($feature_name,
                                                                $upperbound{$feature_name}, $class_name);
@@ -1460,7 +1460,7 @@ sub probability_of_a_sequence_of_features_and_values_or_thresholds_given_class {
                 $probability *=  $self->probability_of_feature_less_than_threshold_given_class($feature_name, 
                                                                $upperbound{$feature_name}, $class_name);
             }
-        } elsif ($lowerbound{$feature_name} && ! $upperbound{$feature_name}) {
+        } elsif (defined($lowerbound{$feature_name}) && ! defined($upperbound{$feature_name})) {
             if (! $probability) {
                 $probability =   1.0 - $self->probability_of_feature_less_than_threshold_given_class($feature_name,
                                                                $lowerbound{$feature_name}, $class_name);
@@ -2442,6 +2442,7 @@ sub display_decision_tree {
 
 
 ##########################  Generate Your Own Numeric Training and Test Data  ############################
+##########################      Class TrainingAndTestDataGeneratorNumeric     ############################
 
 ##  See the script generate_training_and_test_data_numeric.pl in the examples
 ##  directory on how to use this class for generating your own numeric training and
@@ -2687,7 +2688,8 @@ sub fisher_yates_shuffle {
     }
 }
 
-##############################  Generate Your Own Symbolic Training Data  ################################
+#########################  Generate Your Own Symbolic Training and Test Data  ###########################
+#########################     Class TrainingAndTestDataGeneratorSymbolic      ###########################
 
 ##  See the sample script generate_training_and_test_data_symbolic.pl for how to use
 ##  this class for generating purely symbolic training and test data.  The data is
@@ -3126,8 +3128,8 @@ classifying new data.
 
   # If your training data includes numeric features (a feature is numeric if it can
   # take any floating point value over an interval), you are expected to supply your
-  # training data through a CSV file and your call for constructing a decision tree
-  # will look like:
+  # training data through a CSV file and your call for constructing an instance of
+  # the DecisionTree class will look like:
 
       my $training_datafile = "stage3cancer.csv";
 
@@ -3155,20 +3157,21 @@ classifying new data.
   # with a particular choice of decision threshold for a numeric feature or a feature
   # value for a symbolic feature.
 
-  # After you have constructed an instance of the DecisionTree module, you read in
-  # the training data file and initialize the probability cache by calling:
+  # After you have constructed an instance of the DecisionTree class as shown above,
+  # you read in the training data file and initialize the probability cache by
+  # calling:
 
       $dt->get_training_data();
       $dt->calculate_first_order_probabilities();
       $dt->calculate_class_priors();
 
-  # Now you are ready to construct a decision tree for your training data by calling:
+  # Next you construct a decision tree for your training data by calling:
 
       $root_node = $dt->construct_decision_tree_classifier();
 
-  # where $root_node is an instance of DTNode class that is also defined in the
-  # module file.  Now you are ready to classify a data record.  Let's say that your
-  # data record looks like:
+  # where $root_node is an instance of the DTNode class that is also defined in the
+  # module file.  Now you are ready to classify a new data record.  Let's say that
+  # your data record looks like:
 
       my @test_sample  = qw /  g2=4.2
                                grade=2.3
@@ -3198,6 +3201,10 @@ classifying new data.
 
 
 =head1 CHANGES
+
+Version 2.21 fixes a bug that was caused by the explicitly-set zero values for
+numerical features being misconstrued as "false" in the conditional statements in
+some of the method definitions.
 
 Version 2.2 makes it easier to write code for classifying in one go all of your test
 data samples in a CSV file.  The bulk classifications obtained can be written out to
@@ -3314,7 +3321,9 @@ the feature space into different regions, each corresponding to a different clas
 Subsequently, when you try to classify a new data sample, you locate it in the
 feature space and find the class label of the region to which it belongs.  One can
 also give the new data point the same class label as that of the nearest training
-sample. This is referred to as the nearest neighbor classification.
+sample. This is referred to as the nearest neighbor classification.  There exist
+hundreds of variations of varying power on these two basic approaches to the
+classification of multidimensional data.
 
 A decision tree classifier works differently.  When you construct a decision tree,
 you select for the root node a feature test that partitions the training data in a
@@ -3710,15 +3719,15 @@ the C<examples> directory:
     classify_test_data_in_a_file_symbolic.pl
 
 the first for the case of numeric/symbolic data placed in a CSV file and the second
-case of purely symbolic data placed in a `.dat' file.  These script requires three
+case of purely symbolic data placed in a `.dat' file.  These scripts require three
 command-line arguments, the first argument names the training datafile, the second
-the test datafile, and the third in which the classification results will be
-deposited.  The test data files for both the numeric/symbolic and the purely symbolic
-cases must look like the training data files.  B<If the test data files do not
-mention the class labels --- as will be the case for real-world test data --- you
-must still have a column for the class labels with the entries set to the empty
-string C<"">.> The test datafile for the purely symbolic case must mention the order
-in which the features values are presented.  For an example, see the file
+the test datafile, and the third the name of the file in which the classification
+results will be deposited.  The test data files for both the numeric/symbolic and the
+purely symbolic cases must look like the training data files.  B<If the test data
+files do not mention the class labels --- as will be the case for real-world test
+data --- you must still have a column for the class labels with the entries set to
+the empty string C<"">.> The test datafile for the purely symbolic case must mention
+the order in which the features values are presented.  For an example, see the file
 C<testdata.dat> in the C<examples> directory.
 
 A special feature of the script C<classify_test_data_in_a_file_numeric.pl> is that

@@ -20,7 +20,7 @@ my $debug = 0;
 ### when the output is sent to a `.txt' file.  If the output is sent to a `.csv' 
 ### file, you'll see all the class names and their probabilities for each data sample
 ### in your test datafile.
-my $show_hard_classifications = 0;
+my $show_hard_classifications = 1;
 
 my ($training_datafile, $test_datafile, $outputfile) = @ARGV;
 

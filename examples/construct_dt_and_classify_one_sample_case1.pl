@@ -8,7 +8,6 @@ use strict;
 use Algorithm::DecisionTree;
 
 my $training_datafile = "training.dat";
-#my $training_datafile = "training_new.dat";
 
 my $dt = Algorithm::DecisionTree->new( 
                               training_datafile => $training_datafile,
