@@ -17,7 +17,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '2.21';
+our $VERSION = '2.22';
 
 ############################################   Constructor  ##############################################
 
@@ -47,6 +47,7 @@ sub new {
         _csv_columns_for_features            =>    $args{csv_columns_for_features} || undef,
         _symbolic_to_numeric_cardinality_threshold
                                              =>    $args{symbolic_to_numeric_cardinality_threshold} || 10,
+        _number_of_histogram_bins            =>    $args{number_of_histogram_bins} || undef,
         _root_node                           =>    undef,
         _probability_cache                   =>    {},
         _entropy_cache                       =>    {},
@@ -76,6 +77,7 @@ sub classify {
     my $self = shift;
     my $root_node = shift;
     my $feature_and_values = shift;
+    my $numregex =  '[+-]?\ *(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?';
     my @features_and_values = @$feature_and_values;
     @features_and_values = @{deep_copy_array(\@features_and_values)};
     die "Error in the names you have used for features and/or values" 
@@ -88,7 +90,8 @@ sub classify {
         my $newvalue = $value;
         my @unique_values_for_feature = @{$self->{_features_and_unique_values_hash}->{$feature}};
         my $not_all_values_float = 0;
-        map {$not_all_values_float = 1 if $_ !~ /^\d*\.\d+$/} @unique_values_for_feature;
+        # map {$not_all_values_float = 1 if $_ !~ /^\d*\.\d+$/} @unique_values_for_feature;
+        map {$not_all_values_float = 1 if $_ !~ /^$numregex$/} @unique_values_for_feature;
         if (! contained_in($feature, keys %{$self->{_prob_distribution_numeric_features_hash}}) &&
                                                                        $not_all_values_float == 0) {
             $newvalue = closest_sampling_point($value, \@unique_values_for_feature);
@@ -210,7 +213,6 @@ sub recursive_descent_for_classification {
     }
     return \%answer;
 }
-
 
 ##  If you want classification to be carried out by engaging a human user in a
 ##  question-answer session, this is the method to use for that purpose.  See, for
@@ -984,6 +986,13 @@ sub probability_of_feature_value {
                                     $unique_values_for_feature[$_-1]}  1..@unique_values_for_feature-1;
                 my $median_diff = $diffs[int(@diffs/2) - 1];
                 $histogram_delta =  $median_diff * 2;
+                if ($histogram_delta < $diffrange / 500.0) {
+                    if (defined $self->{_number_of_histogram_bins}) {
+                        $histogram_delta = $diffrange / $self->{_number_of_histogram_bins};
+                    } else {
+                        $histogram_delta = $diffrange / 500.0;
+                    }
+                }
                 $self->{_histogram_delta_hash}->{$feature_name} = $histogram_delta;
                 $num_of_histogram_bins = int($diffrange / $histogram_delta) + 1;
                 $self->{_num_of_histogram_bins_hash}->{$feature_name} = $num_of_histogram_bins;
@@ -1270,7 +1279,6 @@ sub probability_of_feature_less_than_threshold_given_class {
     return $probability;
 }
 
-
 # This method requires that all truly numeric types only be expressed as '<' or '>'
 # constructs in the array of branch features and thresholds
 sub probability_of_a_sequence_of_features_and_values_or_thresholds {
@@ -1374,7 +1382,6 @@ sub probability_of_a_sequence_of_features_and_values_or_thresholds {
     $self->{_probability_cache}->{$sequence} = $probability;
     return $probability;
 }
-
 
 ##  The following method requires that all truly numeric types only be expressed as
 ##  '<' or '>' constructs in the array of branch features and thresholds
@@ -1506,11 +1513,15 @@ sub probability_of_a_class_given_sequence_of_features_and_values_or_thresholds {
         }
         my $prob_of_feature_sequence = $self->probability_of_a_sequence_of_features_and_values_or_thresholds(
                                                             \@array_of_features_and_values_or_thresholds);
-        die "PCS Something is wrong with your sequence of feature values and thresholds in " .
-                "probability_of_a_class_given_sequence_of_features_and_values_or_thresholds()"
-                if ! $prob_of_feature_sequence;
+#        die "PCS Something is wrong with your sequence of feature values and thresholds in " .
+#                "probability_of_a_class_given_sequence_of_features_and_values_or_thresholds()"
+#                if ! $prob_of_feature_sequence;
         my $prior = $self->{_class_priors_hash}->{$self->{_class_names}->[$i]};
-        $array_of_class_probabilities[$i] = $prob * $prior / $prob_of_feature_sequence;
+        if ($prob_of_feature_sequence) {
+            $array_of_class_probabilities[$i] = $prob * $prior / $prob_of_feature_sequence;
+        } else {
+            $array_of_class_probabilities[$i] =  $prior;
+        }
     }
     my $sum_probability;
     map {$sum_probability += $_} @array_of_class_probabilities;
@@ -1641,6 +1652,7 @@ sub determine_data_condition {
             if ! contained_in($feature, keys %{$self->{_numeric_features_valuerange_hash}});
         push @number_of_values, scalar @values;
     }
+    return if ! @values;
     print "Number of features: $num_of_features\n";
     my @minmax = minmax(\@number_of_values);
     my $max_num_values = $minmax[1];
@@ -1672,6 +1684,7 @@ sub determine_data_condition {
 
 sub get_training_data_from_csv {
     my $self = shift;
+    my $numregex =  '[+-]?\ *(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?';
     my $filename = $self->{_training_datafile} || die "you did not specify a file for the training data";
     open FILEIN, $filename or die "Unable to open $filename: $!";
     die("Aborted. get_training_data_csv() is only for CSV files") unless $filename =~ /\.csv$/;
@@ -1679,6 +1692,7 @@ sub get_training_data_from_csv {
     my @all_data =  <FILEIN>;
     my %data_hash = ();
     foreach my $record (@all_data) {
+        chomp $record;
         my @fields =  map {$_ =~ s/^\s*|\s*$//; $_} split /,/, $record;
         my @fields_after_first = @fields[1..$#fields]; 
         $data_hash{$fields[0]} = \@fields_after_first;
@@ -1734,7 +1748,8 @@ sub get_training_data_from_csv {
                                                    @{$features_and_values_hash{$feature}};
         $feature_values_how_many_uniques_hash{$feature} = scalar @unique_values_for_feature;
         my $not_all_values_float = 0;
-        map {$not_all_values_float = 1 if $_ !~ /^\d*\.\d+$/} @unique_values_for_feature;
+        #map {$not_all_values_float = 1 if $_ !~ /^\d*\.\d+$/} @unique_values_for_feature;
+        map {$not_all_values_float = 1 if $_ !~ /^$numregex$/} @unique_values_for_feature;
         if ($not_all_values_float == 0) {
             my @minmaxvalues = minmax(\@unique_values_for_feature);
             $numeric_features_valuerange_hash{$feature} = \@minmaxvalues; 
@@ -2038,6 +2053,7 @@ sub check_for_illegal_params2 {
                             csv_class_column_index
                             csv_columns_for_features
                             symbolic_to_numeric_cardinality_threshold
+                            number_of_histogram_bins
                             debug1
                             debug2
                             debug3
@@ -3090,7 +3106,6 @@ sub gen_symbolic_training_and_test_data {
     close FILEHANDLE;
 }
 
-
 sub find_longest_feature_or_value {
     my $self = shift;
     my %features_and_values_hash = %{$self->{_features_and_values_hash}};
@@ -3201,6 +3216,12 @@ classifying new data.
 
 
 =head1 CHANGES
+
+Version 2.22 should prove more robust when the probability distribution for the
+values of a feature is expected to be heavy-tailed; that is, when the supposedly rare
+observations can occur with significant probabilities.  A new option in the
+DecisionTree constructor lets the user specify the precision with which the
+probability distributions are estimated for such features.
 
 Version 2.21 fixes a bug that was caused by the explicitly-set zero values for
 numerical features being misconstrued as "false" in the conditional statements in
@@ -3464,12 +3485,45 @@ L<https://engineering.purdue.edu/kak/Tutorials/DecisionTreeClassifiers.pdf> for
 further information on the implementation issues related to the symbolic and numeric
 features.
 
+=head1 FEATURES WITH NOT SO "NICE" STATISTICAL PROPERTIES
+
+For the purpose of estimating the probabilities, it is necessary to sample the range
+of values taken on by a numerical feature. For features with "nice" statistical
+properties, this sampling interval is set to the median of the differences between
+the successive feature values in the training data.  (Obviously, as you would expect,
+you first sort all the values for a feature before computing the successive
+differences.)  This logic will not work for the sort of a feature described below.
+
+Consider a feature whose values are heavy-tailed, and, at the same time, the values
+span a million to one range.  What I mean by heavy-tailed is that rare values can
+occur with significant probabilities.  It could happen that most of the values for
+such a feature are clustered at one of the two ends of the range. At the same time,
+there may exist a significant number of values near the end of the range that is less
+populated.  (Typically, features related to human economic activities --- such as
+wealth, incomes, etc. --- are of this type.)  With the logic described in the
+previous paragraph, you could end up with a sampling interval that is much too small,
+which could result in millions of sampling points for the feature if you are not
+careful.
+
+Beginning with Version 2.22, you have two options in dealing with such features.  You
+can choose to go with the default behavior of the module, which is to sample the
+value range for such a feature over a maximum of 500 points.  Or, you can supply an
+additional option to the constructor that sets a user-defined value for the number of
+points to use.  The name of the option is C<number_of_histogram_bins>.  The following
+script 
+
+    construct_dt_for_heavytailed.pl 
+
+in the C<examples> directory shows an example of how to call the constructor of the
+module with the C<number_of_histogram_bins> option.
+
+
 =head1 TESTING THE QUALITY OF YOUR TRAINING DATA
 
-Version 2.1 includes a new class named C<EvalTrainingData>, derived from the main
-class C<DecisionTree>, that runs a 10-fold cross-validation test on your training
-data to test its ability to discriminate between the classes mentioned in the
-training file.
+Versions 2.1 and higher include a new class named C<EvalTrainingData>, derived from
+the main class C<DecisionTree>, that runs a 10-fold cross-validation test on your
+training data to test its ability to discriminate between the classes mentioned in
+the training file.
 
 The 10-fold cross-validation test divides all of the training data into ten parts,
 with nine parts used for training a decision tree and one part used for testing its
@@ -3579,12 +3633,19 @@ This parameter allows the module to treat an otherwise numeric feature symbolica
 if the number of different values the feature takes in the training data file does
 not exceed the value of this parameter.
 
+=item C<number_of_histogram_bins>:
+
+This parameter gives the user the option to set the number of points at which the
+value range for a feature should be sampled for estimating the probabilities.  This
+parameter is effective only for those features that occupy a large value range and
+whose probability distributions are heavy tailed.
+
 =back
 
 You can choose the best values to use for the last three constructor parameters by
 running a 10-fold cross-validation test on your training data through the class
-C<EvalTrainingData> that comes with Version 2.1 of this module.  See the section
-"TESTING THE QUALITY OF YOUR TRAINING DATA" of this document page.
+C<EvalTrainingData> that comes with Versions 2.1 and higher of this module.  See the
+section "TESTING THE QUALITY OF YOUR TRAINING DATA" of this document page.
 
 =over
 
@@ -3810,6 +3871,16 @@ shows how you can use a decision-tree classifier interactively.  In this mode, y
 first construct the decision tree from the training data and then the user is
 prompted for answers to the feature tests at the nodes of the tree.
 
+If your training data has a feature whose values span a large range and, at the same
+time, are characterized by a heavy-tail distribution, you should look at the script
+
+    construct_dt_for_heavytailed.pl                                                     
+
+to see how to use the option C<number_of_histogram_bins> in the call to the
+constructor.  This option was introduced in Version 2.22 for dealing with such
+features.  If you do not set this option, the module will use the default value of
+500 for the number of points at which to sample the value range for such a feature.
+
 The C<examples> directory also contains the following scripts:
 
     generate_training_and_test_data_numeric.pl
@@ -3821,8 +3892,8 @@ out in a parameter file.  There are constraints on how the information is laid o
 a parameter file.  See the files C<param_numeric.txt> and C<param_symbolic.txt> in
 the C<examples> directory for how to structure these files.
 
-The C<examples> directory of Version 2.1 and above of the C<DecisionTree> module also
-contains the following two scripts:
+The C<examples> directory of Versions 2.1 and higher of the C<DecisionTree> module
+also contains the following two scripts:
 
     evaluate_training_data1.pl
     evaluate_training_data2.pl

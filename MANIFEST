@@ -5,6 +5,7 @@ examples/construct_dt_and_classify_one_sample_case1.pl
 examples/construct_dt_and_classify_one_sample_case2.pl
 examples/construct_dt_and_classify_one_sample_case3.pl
 examples/construct_dt_and_classify_one_sample_case4.pl
+examples/construct_dt_for_heavytailed.pl
 examples/evaluate_training_data1.pl
 examples/evaluate_training_data2.pl
 examples/generate_training_and_test_data_numeric.pl
@@ -18,10 +19,10 @@ examples/README
 examples/README_for_CSV_files
 examples/README_for_dat_files
 examples/stage3cancer.csv
-examples/training4.dat
 examples/training4.csv
-examples/testdata.dat
 examples/test4.csv
+examples/training4.dat
+examples/testdata.dat
 examples/test4.dat
 examples/test4_no_class_labels.csv
 examples/test4_no_class_labels.dat
@@ -31,6 +32,7 @@ examples/training.csv
 examples/training2.csv
 examples/training3.csv
 examples/training.dat
+examples/heavytailed.csv
 lib/Algorithm/DecisionTree.pm
 Makefile.PL
 MANIFEST			This list of files

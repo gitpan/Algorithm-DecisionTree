@@ -114,6 +114,30 @@
 >   CSV FILES FOR TRAINING AND TEST DATA.
 
 
+(4) Let's now talk about how you can deal with features that, statistically
+    speaking, are not so "nice".  We are talking about features with
+    heavy-tailed distributions over large value ranges.  As mentioned in
+    the HTML based API for this module, such features can create problems
+    with the estimation of the probability distributions associated with
+    them.  As mentioned there, the main problem that such features cause
+    is with deciding how best to sample the value range.
+
+    Beginning with Version 2.22, you have two options in dealing with such
+    features.  You can choose to go with the default behavior of the
+    module, which is to sample the value range for such a feature over a
+    maximum of 500 points.  Or, you can supply an additional option to the
+    constructor that sets a user-defined value for the number of points to
+    use.  The name of the option is "number_of_histogram_bins".  The
+    following script
+
+          construct_dt_for_heavytailed.pl
+
+    shows an example of a DecisionTree constructor with the
+    "number_of_histogram_bins" option.
+
+
+
+
 ===========================================================================
 
 
