@@ -12,12 +12,12 @@ package Algorithm::DecisionTree;
 # new data.
 #---------- ---------------------------------------------------------------------------
 
-use 5.18.0;
+use 5.14.0;
 use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '2.22';
+our $VERSION = '2.23';
 
 ############################################   Constructor  ##############################################
 
@@ -3217,13 +3217,16 @@ classifying new data.
 
 =head1 CHANGES
 
+Version 2.23 changes the required version of Perl from 5.18.0 to 5.14.0.  Everything
+else remains the same.
+
 Version 2.22 should prove more robust when the probability distribution for the
 values of a feature is expected to be heavy-tailed; that is, when the supposedly rare
 observations can occur with significant probabilities.  A new option in the
 DecisionTree constructor lets the user specify the precision with which the
 probability distributions are estimated for such features.
 
-Version 2.21 fixes a bug that was caused by the explicitly-set zero values for
+Version 2.21 fixes a bug that was caused by the explicitly set zero values for
 numerical features being misconstrued as "false" in the conditional statements in
 some of the method definitions.
 
@@ -3330,9 +3333,9 @@ a training datafile containing multidimensional data.  In one form or another,
 decision trees have been around for about fifty years.  From a statistical
 perspective, they are closely related to classification and regression by recursive
 partitioning of multidimensional data.  Early work that demonstrated the usefulness
-of recursive partitioning of data can be traced, in the statistics community, to the
-contributions by Terry Therneau in the early 1980's and, in the machine learning
-community, to the work of Ross Quinlan in the mid 1990's.
+of such partitioning of data for classification and regression can be traced to the
+work of Terry Therneau in the early 1980's in the statistics community, and to the
+work of Ross Quinlan in the mid 1990's in the machine learning community,
 
 For those not familiar with decision tree ideas, the traditional way to classify
 multidimensional data is to start with a feature space whose dimensionality is the
@@ -3474,7 +3477,14 @@ numeric values in the training data can be treated symbolically provided you are
 careful about handling their values in the test data.  At the least, you have to set
 the test data value for such a feature to its closest value in the training data.
 The module does that automatically for you for those numeric features for which the
-number different numeric values is less than a user-specified threshold.
+number different numeric values is less than a user-specified threshold.  For those
+numeric features that the module is allowed to treat symbolically, this snapping of
+the values of the features in the test data to the small set of values in the training
+data is carried out automatically by the module.  That is, after a user has told the
+module which numeric features to treat symbolically, the user need not worry about
+how the feature values appear in the test data.
+
+
 
 The constructor parameter C<symbolic_to_numeric_cardinality_threshold> let's you tell
 the module when to consider an otherwise numeric feature symbolically. Suppose you
@@ -3933,6 +3943,11 @@ if you have root access.  If not,
 I wish to thank many users of this module for their feedback.  Many of the
 improvements I have made to the module over the years are a result of the feedback
 received.
+
+I thank Slaven for pointing out that the module worked with Perl 5.14.x.  For Version
+2.22, I had set the required version of Perl to 5.18.0 since that's what I used for
+testing the module. Slaven's feedback in the form of the Bug report C<#96547> resulted
+in Version 2.23 of the module.
 
 =head1 AUTHOR
 
