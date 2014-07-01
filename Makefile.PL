@@ -1,8 +1,8 @@
 use ExtUtils::MakeMaker;
 use File::Copy;
 
-if ($^V lt v5.18) {
-   die("Algorithm::DecisionTree has only been tested on Perl 5.18.0.\n" .
+if ($^V lt v5.14) {
+   die("Algorithm::DecisionTree has been tested on Perl 5.14.0.\n" .
    "Your perl version is $].\n");
 }
 

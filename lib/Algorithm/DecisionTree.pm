@@ -17,7 +17,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '2.23';
+our $VERSION = '2.24';
 
 ############################################   Constructor  ##############################################
 
@@ -3216,6 +3216,9 @@ classifying new data.
 
 
 =head1 CHANGES
+
+Version 2.24 fixes the C<Makefile.PL> restriction on the required Perl version.  This
+version should work with Perl versions 5.14.0 and higher.
 
 Version 2.23 changes the required version of Perl from 5.18.0 to 5.14.0.  Everything
 else remains the same.
