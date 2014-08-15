@@ -1,23 +1,21 @@
 package Algorithm::DecisionTree;
 
 #--------------------------------------------------------------------------------------
-# Copyright (c) 2014 Avinash Kak. All rights reserved.
-# This program is free software.  You may modify and/or
-# distribute it under the same terms as Perl itself.
+# Copyright (c) 2014 Avinash Kak. All rights reserved.  This program is free
+# software.  You may modify and/or distribute it under the same terms as Perl itself.
 # This copyright notice must remain attached to the file.
 #
-# Algorithm::DecisionTree is a Perl module for constructing
-# a decision tree from training examples of multidimensional
-# data and then using the tree thus constructed to classify
-# new data.
-#---------- ---------------------------------------------------------------------------
+# Algorithm::DecisionTree is a Perl module for constructing a decision tree from
+# training examples of multidimensional data and then using the tree to classify new
+# data.
+# -------------------------------------------------------------------------------------
 
-use 5.14.0;
+use 5.10.0;
 use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '2.24';
+our $VERSION = '2.25';
 
 ############################################   Constructor  ##############################################
 
@@ -1043,8 +1041,8 @@ sub probability_of_feature_value {
                                                  @{$self->{_features_and_values_hash}->{$feature_name}};
             @values_for_feature = map {"$feature_name=$_"} @values_for_feature;
             my @value_counts = (0) x @values_for_feature;
-
-            foreach my $sample (sort {sample_index($a) cmp sample_index($b)} keys $self->{_training_data_hash}) {
+            foreach my $sample (sort {sample_index($a) cmp sample_index($b)} 
+                                               keys %{$self->{_training_data_hash}}) {
                 my @features_and_values = @{$self->{_training_data_hash}->{$sample}};
                 foreach my $i (0..@values_for_feature-1) {
                     foreach my $current_value (@features_and_values) {
@@ -3217,6 +3215,11 @@ classifying new data.
 
 =head1 CHANGES
 
+Version 2.25 further downshifts the required version of Perl for this module.  This
+was a result of testing the module with Version 5.10.1 of Perl.  Only one statement
+in the module code needed to be changed for the module to work with the older version
+of Perl.
+
 Version 2.24 fixes the C<Makefile.PL> restriction on the required Perl version.  This
 version should work with Perl versions 5.14.0 and higher.
 
@@ -3927,19 +3930,40 @@ the string 'DecisionTree' in the subject line.
 
 =head1 INSTALLATION
 
-The usual
+Download the archive from CPAN in any directory of your choice.  Unpack the archive
+with a command that on a Linux machine would look like:
+
+    tar zxvf Algorithm-DecisionTree-2.25.tar.gz
+
+This will create an installation directory for you whose name will be
+C<Algorithm-DecisionTree-2.25>.  Enter this directory and execute the following
+commands for a standard install of the module if you have root privileges:
 
     perl Makefile.PL
     make
     make test
-    make install
+    sudo make install
 
-if you have root access.  If not, 
+If you do not have root privileges, you can carry out a non-standard install the
+module in any directory of your choice by:
 
     perl Makefile.PL prefix=/some/other/directory/
     make
     make test
     make install
+
+With a non-standard install, you may also have to set your PERL5LIB environment
+variable so that this module can find the required other modules. How you do that
+would depend on what platform you are working on.  In order to install this module in
+a Linux machine on which I use tcsh for the shell, I set the PERL5LIB environment
+variable by
+
+    setenv PERL5LIB /some/other/directory/lib64/perl5/:/some/other/directory/share/perl5/
+
+If I used bash, I'd need to declare:
+
+    export PERL5LIB=/some/other/directory/lib64/perl5/:/some/other/directory/share/perl5/
+
 
 =head1 THANKS
 
@@ -3949,8 +3973,9 @@ received.
 
 I thank Slaven for pointing out that the module worked with Perl 5.14.x.  For Version
 2.22, I had set the required version of Perl to 5.18.0 since that's what I used for
-testing the module. Slaven's feedback in the form of the Bug report C<#96547> resulted
-in Version 2.23 of the module.
+testing the module. Slaven's feedback in the form of the Bug report C<#96547>
+resulted in Version 2.23 of the module.  Version 2.25 further downshifts the required
+version of Perl to 5.10.
 
 =head1 AUTHOR
 
@@ -3961,8 +3986,8 @@ past my spam filter.
 
 =head1 COPYRIGHT
 
-This library is free software; you can redistribute it and/or
-modify it under the same terms as Perl itself.
+This library is free software; you can redistribute it and/or modify it under the
+same terms as Perl itself.
 
  Copyright 2014 Avinash Kak
 
