@@ -8,7 +8,6 @@ use strict;
 use Algorithm::DecisionTree;
 
 my $parameter_file = "param_numeric.txt";
-
 my $output_training_csv_file = "training4.csv";
 my $output_test_csv_file = "test4.csv";
 

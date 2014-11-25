@@ -15,7 +15,7 @@ use strict;
 use warnings;
 use Carp;
 
-our $VERSION = '2.25';
+our $VERSION = '2.26';
 
 ############################################   Constructor  ##############################################
 
@@ -2490,6 +2490,7 @@ sub new {
         _class_names                       =>    [],
         _class_names_and_priors            =>    {},
         _features_with_value_range         =>    {},
+        _features_ordered                  =>    [],
         _classes_and_their_param_values    =>    {},
     }, $class;
 }
@@ -2548,10 +2549,12 @@ sub read_parameter_file_numeric {
     }
     $regex = 'feature name: \w*.*?value range: [\d\. -]+';
     my @features = $params =~ /$regex/gsi;
+    my @features_ordered;
     $regex = 'feature name: (\w+)\W*?value range:\s*([\d. -]+)';
     foreach my $feature (@features) {
         $feature =~ /$regex/i;
         my $feature_name = $1;
+        push @features_ordered, $feature_name;
         my @value_range = split ' ', $2;
         $features_with_value_range{$feature_name} = \@value_range;
     }
@@ -2604,6 +2607,7 @@ sub read_parameter_file_numeric {
     $self->{_class_names_and_priors}   = \%class_names_and_priors;
     $self->{_features_with_value_range}   = \%features_with_value_range;
     $self->{_classes_and_their_param_values} = \%classes_and_their_param_values;
+    $self->{_features_ordered} = \@features_ordered;
 }
 
 ##  After the parameter file is parsed by the previous method, this method calls on
@@ -2669,7 +2673,7 @@ sub gen_numeric_training_and_test_data_and_write_to_csv {
         }
     }
     open OUTPUT, ">$self->{_output_training_csv_file}";
-    my @feature_names_training = keys %{$self->{_features_with_value_range}};
+    my @feature_names_training = @{$self->{_features_ordered}};
     my @quoted_feature_names_training = map {"\"$_\""} @feature_names_training;
     my $first_row_training = '"",' . "\"class_name\"," . join ",", @quoted_feature_names_training;
     print OUTPUT "$first_row_training\n";
@@ -3215,6 +3219,13 @@ classifying new data.
 
 =head1 CHANGES
 
+Version 2.26 fixes a bug in the part of the module that some folks use for generating
+synthetic data for experimenting with decision tree construction and classification.
+In the class TrainingAndTestDataGeneratorNumeric that is a part of the module, there
+was a problem with the order in which the features were recorded from the
+user-supplied parameter file.  The basic code for decision tree construction and
+classification remains unchanged.
+
 Version 2.25 further downshifts the required version of Perl for this module.  This
 was a result of testing the module with Version 5.10.1 of Perl.  Only one statement
 in the module code needed to be changed for the module to work with the older version
@@ -3609,7 +3620,7 @@ as shown above, the class labels are in the third column for the above case.
 
 =back
 
-=head2 Constructor Parameters:
+=head2 Constructor Parameters
 
 =over 8
 
@@ -3933,10 +3944,10 @@ the string 'DecisionTree' in the subject line.
 Download the archive from CPAN in any directory of your choice.  Unpack the archive
 with a command that on a Linux machine would look like:
 
-    tar zxvf Algorithm-DecisionTree-2.25.tar.gz
+    tar zxvf Algorithm-DecisionTree-2.26.tar.gz
 
 This will create an installation directory for you whose name will be
-C<Algorithm-DecisionTree-2.25>.  Enter this directory and execute the following
+C<Algorithm-DecisionTree-2.26>.  Enter this directory and execute the following
 commands for a standard install of the module if you have root privileges:
 
     perl Makefile.PL
